@@ -1,3 +1,5 @@
+import { X } from "lucide-react";
+
 const variants = {
   success: {
     container: "bg-[#EDF8F0] text-[#247A38]",
@@ -66,14 +68,18 @@ export default function Alert({
           aria-label="Cerrar mensaje"
           className="
             shrink-0
-            text-lg
-            leading-none
+            rounded-md
+            p-0.5
             opacity-60
             transition-opacity
             hover:opacity-100
           "
         >
-          ×
+          <X
+            size={16}
+            strokeWidth={2}
+            aria-hidden="true"
+          />
         </button>
       )}
     </div>

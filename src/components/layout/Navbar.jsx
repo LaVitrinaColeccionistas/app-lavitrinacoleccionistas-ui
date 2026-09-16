@@ -1,4 +1,7 @@
+import { Bell } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+
+import Avatar from "../ui/Avatar";
 
 export default function Navbar({
   user,
@@ -84,7 +87,6 @@ export default function Navbar({
                   text-sm
                   font-medium
                   transition-colors
-
                   ${
                     active
                       ? "text-[#5146E5]"
@@ -119,60 +121,19 @@ export default function Navbar({
               hover:text-[#5146E5]
             "
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              className="h-[18px] w-[18px]"
+            <Bell
+              size={18}
+              strokeWidth={1.8}
               aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"
-              />
-
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M13.7 21a2 2 0 0 1-3.4 0"
-              />
-            </svg>
+            />
           </button>
 
           {/* AVATAR */}
-          {user?.avatarUrl ? (
-            <img
-              src={user.avatarUrl}
-              alt={`Perfil de ${user?.name || "usuario"}`}
-              className="
-                h-9
-                w-9
-                rounded-full
-                object-cover
-              "
-            />
-          ) : (
-            <div
-              className="
-                flex
-                h-9
-                w-9
-                items-center
-                justify-center
-                rounded-full
-                bg-[#EEECFF]
-                text-sm
-                font-semibold
-                text-[#5146E5]
-              "
-            >
-              {user?.name
-                ? user.name.charAt(0).toUpperCase()
-                : "U"}
-            </div>
-          )}
+          <Avatar
+            src={user?.avatarUrl}
+            name={user?.name || "Usuario"}
+            size="md"
+          />
 
           {/* NOMBRE */}
           {user?.name && (

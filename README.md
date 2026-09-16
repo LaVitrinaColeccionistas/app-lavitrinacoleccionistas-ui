@@ -18,6 +18,7 @@ npm install react-router-dom
 | `react` / `react-dom` | Base del proyecto (creado por Vite) |
 | `tailwindcss` + `@tailwindcss/vite` | Estilos |
 | `react-router-dom` | Navegación entre páginas (Catálogo, Compras, Intercambios, etc.) |
+| `lucide-react` | Iconos reutilizables de la interfaz |
 
 ## Componentes genéricos
 
@@ -30,16 +31,19 @@ npm install react-router-dom
 - **Textarea** — campo de texto multilínea reutilizable.
 - **Select** — selector genérico con opciones configurables.
 - **Card** — contenedor reutilizable para agrupar contenido.
-- **Badge** — etiqueta reutilizable para representar estados, categorías u otra información.
+- **Badge** — etiqueta reutilizable para representar estados, categorías u otra información mediante variantes de color ("Pendiente", "Aceptada", "Rechazada", etc.).
 - **Alert** — mensajes reutilizables de información, éxito, advertencia o error.
 - **Pagination** — paginado reutilizable para listados.
 - **Table** — tabla genérica con columnas configurables vía props (`columns`, `data`, `renderRow`).
+- **FilterSidebar** — filtros avanzados reutilizables para categoría, estado, rango de precio y fecha.
+- **ItemCompareCard** — bloque reutilizable para representar y comparar artículos en intercambios.
 
 **`layout/`**
 
 - **Navbar** — logo, links de navegación configurables, notificaciones, avatar y usuario.
 - **Footer** — pie de página común para las diferentes vistas.
 - **PageLayout** — estructura base reutilizable que integra Navbar, contenido y Footer.
+- **Breadcrumb** — ruta de navegación reutilizable para indicar la ubicación dentro de la aplicación.
 
 **`product/`**
 
@@ -47,23 +51,8 @@ npm install react-router-dom
 
 **`ui/`**
 
-- **Modal** — contenedor genérico reutilizable (confirmaciones, rechazo de intercambio, etc.).
-
-### Pendientes
-
-**`ui/`**
-
-- `StatusPill` — estado de orden/intercambio con color según valor ("Pendiente", "Enviado", "Aceptada", "Rechazada").
-- `Avatar` — foto de perfil reutilizable (navbar, vendedor, comprador).
-
-**`layout/`**
-
-- `Breadcrumb` — ruta de navegación ("Mi cuenta / Mis compras").
-
-**`common/`**
-
-- `FilterSidebar` — filtros avanzados del catálogo (categoría, estado, rango de precio/fecha).
-- `ItemCompareCard` — bloque "artículo que solicito / artículo que ofrezco" (vista de intercambios).
+- **Modal** — contenedor genérico reutilizable para confirmaciones, formularios y otras ventanas modales.
+- **Avatar** — representación reutilizable de la imagen o inicial de un usuario.
 
 ## Scripts
 
