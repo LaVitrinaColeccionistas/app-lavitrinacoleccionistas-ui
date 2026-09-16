@@ -1,4 +1,5 @@
 # La Vitrina Coleccionables — Frontend
+
 ## Stack
 
 - **React** (JavaScript) + **Vite**
@@ -21,28 +22,46 @@ npm install react-router-dom
 ## Componentes genéricos
 
 ### Creados
-- **Navbar** (`layout/`) — logo, links de navegación, notificaciones, avatar.
-- **Modal** (`ui/`) — contenedor genérico reutilizable (confirmaciones, rechazo de intercambio, etc.).
-- **Table** (`common/`) — tabla genérica con columnas configurables vía props (`columns`, `data`, `renderRow`).
+
+**`common/`**
+
+- **Button** — botón reutilizable con variantes para diferentes tipos de acciones.
+- **Input** — campo de texto genérico con soporte para validaciones y mensajes.
+- **Textarea** — campo de texto multilínea reutilizable.
+- **Select** — selector genérico con opciones configurables.
+- **Card** — contenedor reutilizable para agrupar contenido.
+- **Badge** — etiqueta reutilizable para representar estados, categorías u otra información.
+- **Alert** — mensajes reutilizables de información, éxito, advertencia o error.
+- **Pagination** — paginado reutilizable para listados.
+- **Table** — tabla genérica con columnas configurables vía props (`columns`, `data`, `renderRow`).
+
+**`layout/`**
+
+- **Navbar** — logo, links de navegación configurables, notificaciones, avatar y usuario.
+- **Footer** — pie de página común para las diferentes vistas.
+- **PageLayout** — estructura base reutilizable que integra Navbar, contenido y Footer.
+
+**`product/`**
+
+- **ProductCard** — tarjeta reutilizable para representar artículos del catálogo.
+
+**`ui/`**
+
+- **Modal** — contenedor genérico reutilizable (confirmaciones, rechazo de intercambio, etc.).
 
 ### Pendientes
 
 **`ui/`**
-- `Button` — variantes primary / secondary / danger / success.
-- `Input` — campo de texto genérico (título, búsqueda, precio).
-- `Textarea` — descripción de publicaciones.
-- `Select` / `Dropdown` — categoría, estado, tipo de venta, motivo de rechazo.
-- `Badge` / `Tag` — rareza y condición del artículo ("Ultra Raro", "Mint 10/10").
+
 - `StatusPill` — estado de orden/intercambio con color según valor ("Pendiente", "Enviado", "Aceptada", "Rechazada").
 - `Avatar` — foto de perfil reutilizable (navbar, vendedor, comprador).
 
 **`layout/`**
-- `Footer` — pie de página (se repite en todas las vistas).
+
 - `Breadcrumb` — ruta de navegación ("Mi cuenta / Mis compras").
 
 **`common/`**
-- `ProductCard` — tarjeta de artículo del catálogo (imagen, badges, título, vendedor, precio, botón).
-- `Pagination` — paginado "Anterior 1 2 3 Siguiente".
+
 - `FilterSidebar` — filtros avanzados del catálogo (categoría, estado, rango de precio/fecha).
 - `ItemCompareCard` — bloque "artículo que solicito / artículo que ofrezco" (vista de intercambios).
 
@@ -53,7 +72,6 @@ npm run dev       # levanta entorno de desarrollo
 npm run build     # build de producción
 npm run preview   # preview del build
 ```
-
 
 # React + Vite
 
@@ -70,4 +88,4 @@ The React Compiler is not enabled on this template because of its impact on dev 
 
 ## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [typescript-eslint](https://typescript-eslint.io) in your project.
