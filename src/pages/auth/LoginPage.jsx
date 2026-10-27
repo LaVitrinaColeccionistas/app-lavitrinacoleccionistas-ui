@@ -1,36 +1,53 @@
+
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+
 import AuthLayout from "../../components/layout/AuthLayout";
 import Card from "../../components/common/Card";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 import Alert from "../../components/common/Alert";
+
 import { login } from "../../services/authService";
-import { saveToken } from "../../utils/session";
+import { useAuth } from "../../context/AuthContext";
 import { validateLogin } from "../../utils/validators";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
-  const [form, setForm] = useState({ email: "", password: "" });
+  const { iniciarSesion } = useAuth();
+
+  const [form, setForm] = useState({
+    email: "",
+    password: "",
+  });
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const handleChange = (e) =>
+    setForm((f) => ({
+      ...f,
+      [e.target.name]: e.target.value,
+    }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     const v = validateLogin(form);
     setErrors(v);
+
     if (Object.keys(v).length) return;
 
     setLoading(true);
     setApiError("");
+
     try {
       const { accessToken } = await login(form);
-      saveToken(accessToken);
-      navigate("/catalogo");
+
+      iniciarSesion(accessToken);
+
+      navigate(state?.from || "/catalogo", { replace: true });
     } catch (err) {
       setApiError(
         err.status === 401
@@ -45,7 +62,10 @@ export default function LoginPage() {
   return (
     <AuthLayout>
       <Card padding="lg" className="w-full max-w-[360px]">
-        <h1 className="text-xl font-bold text-[#1F2937]">Iniciar Sesión</h1>
+        <h1 className="text-xl font-bold text-[#1F2937]">
+          Iniciar Sesión
+        </h1>
+
         <p className="mb-5 mt-1 text-sm text-[#6B7280]">
           Ingresá tus credenciales para acceder a tu vitrina
         </p>
@@ -55,26 +75,59 @@ export default function LoginPage() {
             Solicitud enviada. Te notificaremos por correo cuando sea revisada.
           </Alert>
         )}
+
         {apiError && (
-          <Alert variant="danger" className="mb-4" onClose={() => setApiError("")}>
+          <Alert
+            variant="danger"
+            className="mb-4"
+            onClose={() => setApiError("")}
+          >
             {apiError}
           </Alert>
         )}
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-4">
-          <Input label="Correo electrónico" name="email" type="email"
-            placeholder="ejemplo@correo.com" value={form.email}
-            onChange={handleChange} error={errors.email} />
-          <Input label="Contraseña" name="password" type="password"
-            value={form.password} onChange={handleChange} error={errors.password} />
-          <Button type="submit" variant="success" fullWidth loading={loading}>
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          className="space-y-4"
+        >
+          <Input
+            label="Correo electrónico"
+            name="email"
+            type="email"
+            placeholder="ejemplo@correo.com"
+            value={form.email}
+            onChange={handleChange}
+            error={errors.email}
+          />
+
+          <Input
+            label="Contraseña"
+            name="password"
+            type="password"
+            value={form.password}
+            onChange={handleChange}
+            error={errors.password}
+          />
+
+          <Button
+            type="submit"
+            variant="success"
+            fullWidth
+            loading={loading}
+          >
             Iniciar Sesión
           </Button>
         </form>
 
         <p className="mt-4 text-center text-sm text-[#4B5563]">
           ¿No tenés cuenta?{" "}
-          <Link to="/registro" className="text-[#5146E5] underline">Registrate aquí</Link>
+          <Link
+            to="/registro"
+            className="text-[#5146E5] underline"
+          >
+            Registrate aquí
+          </Link>
         </p>
       </Card>
     </AuthLayout>

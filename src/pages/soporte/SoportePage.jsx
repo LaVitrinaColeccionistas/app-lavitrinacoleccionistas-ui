@@ -8,6 +8,7 @@ import Button from "../../components/common/Button";
 import Card from "../../components/common/Card";
 import Input from "../../components/common/Input";
 import Textarea from "../../components/common/Textarea";
+import { getToken } from "../../utils/session";
 
 import { crearTicketSoporte } from "../../services/ticketsSoporteService";
 
@@ -41,12 +42,8 @@ export default function SoportePage() {
     setMensajeExito("");
     setRequiereLogin(false);
 
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-      setError(
-        "Debes iniciar sesión para enviar una solicitud de soporte."
-      );
+    if (!getToken()) {
+      setError("Debes iniciar sesión para enviar una solicitud.");
       setRequiereLogin(true);
       return;
     }
@@ -170,11 +167,11 @@ export default function SoportePage() {
           <div className="grid gap-5 md:grid-cols-2">
 
             <Input
-              label="Nombre"
+              label="Nombre y Apellido"
               name="nombre"
               value={formulario.nombre}
               onChange={handleChange}
-              placeholder="Tu nombre"
+              placeholder="Tu nombre y apellido"
               required
             />
 
