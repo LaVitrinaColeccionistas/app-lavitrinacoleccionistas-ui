@@ -2,6 +2,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -10,6 +11,7 @@ import {
   getToken,
   saveToken,
   clearToken,
+  decodePayload,
 } from "../utils/session";
 
 //mantiene el token, el ID del usuario y sus roles disponibles para los componentes.
@@ -19,24 +21,17 @@ const AuthContext = createContext(null);
 function leerPayload(token) {
   if (!token) return null;
 
-  try {
-    const parte = token.split(".")[1];
-    if (!parte) return null;
+  const payload = decodePayload(token);
+  if (!payload) return null;
 
-    const base64 = parte.replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(base64));
-
-    if (
-      typeof payload.exp === "number" &&
-      payload.exp * 1000 <= Date.now()
-    ) {
-      return null;
-    }
-
-    return payload;
-  } catch {
+  if (
+    typeof payload.exp === "number" &&
+    payload.exp * 1000 <= Date.now()
+  ) {
     return null;
   }
+
+  return payload;
 }
 
 function obtenerUsuarioId(payload) {
@@ -86,6 +81,20 @@ export function AuthProvider({ children }) {
   const roles = useMemo(() => obtenerRoles(payload), [payload]);
 
   const autenticado = Boolean(payload);
+
+  // Cuando el token vence con la app abierta, cierra la sesión sola:
+  // ProtectedRoute detecta autenticado=false y redirige al login.
+  useEffect(() => {
+    if (!payload?.exp) return undefined;
+
+    const restante = payload.exp * 1000 - Date.now();
+    const temporizador = setTimeout(() => {
+      clearToken();
+      setToken(null);
+    }, Math.max(restante, 0));
+
+    return () => clearTimeout(temporizador);
+  }, [payload]);
 
   function iniciarSesion(nuevoToken) {
     if (!leerPayload(nuevoToken)) {

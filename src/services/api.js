@@ -1,4 +1,4 @@
-import { getToken } from "../utils/session";
+import { clearToken, getToken } from "../utils/session";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? ""; // vacío = usa el proxy de Vite
 
@@ -21,6 +21,15 @@ export async function request(path, { method = "GET", body, auth = true } = {}) 
   });
 
   const data = await res.json().catch(() => null);
+
+  // Sesión vencida o inválida en una petición autenticada: limpiar y volver al login
+  if (res.status === 401 && auth) {
+    clearToken();
+    if (window.location.pathname !== "/login") {
+      window.location.replace("/login");
+    }
+  }
+
   if (!res.ok) {
     // ms-seguridad responde { status, mensaje }; el gateway responde { message }
     throw new ApiError(res.status, data?.mensaje ?? data?.message ?? "Error inesperado");

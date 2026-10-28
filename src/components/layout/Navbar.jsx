@@ -8,12 +8,12 @@ import {
 import Avatar from "../ui/Avatar";
 import { useAuth } from "../../context/AuthContext";
 
-const links = [
+const baseLinks = [
   { label: "Catálogo", to: "/catalogo" },
-  { label: "Mis Ofertas", to: "/ofertas" },
+  { label: "Ofertas", to: "/ofertas" },
   { label: "Carrito", to: "/carrito" },
-  { label: "Mis Compras", to: "/compras" },
-  { label: "Mis Intercambios", to: "/intercambios" },
+  { label: "Compras", to: "/compras" },
+  { label: "Intercambios", to: "/intercambios" },
 ];
 
 export default function Navbar({ onNotifications }) {
@@ -24,7 +24,16 @@ export default function Navbar({ onNotifications }) {
     autenticado,
     nombreCompleto,
     cerrarSesion,
+    tieneRol,
   } = useAuth();
+
+  const links = tieneRol("VENDEDOR")
+    ? [
+        { label: "Catálogo", to: "/catalogo" },
+        { label: "Panel vendedor", to: "/vendedor" },
+        { label: "Intercambios", to: "/intercambios" },
+      ]
+    : baseLinks;
 
   function handleLogout() {
     cerrarSesion();

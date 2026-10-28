@@ -1,9 +1,10 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
-//comprueba que el token exista, pueda decodificarse y no esté expirado.
-export default function ProtectedRoute({ children }) {
-  const { autenticado } = useAuth();
+// Comprueba que haya sesión válida (token existente, legible y no vencido)
+// y, si se indican `roles`, que el usuario tenga alguno de ellos.
+export default function ProtectedRoute({ children, roles }) {
+  const { autenticado, tieneRol } = useAuth();
   const location = useLocation();
 
   if (!autenticado) {
@@ -11,6 +12,15 @@ export default function ProtectedRoute({ children }) {
       <Navigate
         to="/login"
         state={{ from: location.pathname }}
+        replace
+      />
+    );
+  }
+
+  if (roles?.length && !roles.some((rol) => tieneRol(rol))) {
+    return (
+      <Navigate
+        to={tieneRol("VENDEDOR") ? "/vendedor" : "/catalogo"}
         replace
       />
     );

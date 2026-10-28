@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -10,6 +9,7 @@ import Alert from "../../components/common/Alert";
 
 import { login } from "../../services/authService";
 import { useAuth } from "../../context/AuthContext";
+import { getUserRole } from "../../utils/session";
 import { validateLogin } from "../../utils/validators";
 
 export default function LoginPage() {
@@ -47,7 +47,12 @@ export default function LoginPage() {
 
       iniciarSesion(accessToken);
 
-      navigate(state?.from || "/catalogo", { replace: true });
+      // Vuelve a donde estaba (si venía redirigido) o va al inicio según el rol
+      navigate(
+        state?.from ||
+          (getUserRole() === "VENDEDOR" ? "/vendedor" : "/catalogo"),
+        { replace: true }
+      );
     } catch (err) {
       setApiError(
         err.status === 401

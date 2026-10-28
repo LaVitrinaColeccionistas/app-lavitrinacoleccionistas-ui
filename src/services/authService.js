@@ -1,7 +1,7 @@
 import { request } from "./api";
 
-// TODO: confirmar IDs contra el seed de Liquibase
-export const ROLES = { COMPRADOR: 2, VENDEDOR: 3 };
+// IDs confirmados con GET /api/roles
+export const ROLES = { COMPRADOR: 1, VENDEDOR: 2, ADMIN: 3 };
 
 export const login = ({ email, password }) =>
   request("/api/auth/login", { method: "POST", body: { email, password }, auth: false });
