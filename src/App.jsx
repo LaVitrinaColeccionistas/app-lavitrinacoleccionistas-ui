@@ -1,4 +1,3 @@
-
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import LoginPage from "./pages/auth/LoginPage";
@@ -12,18 +11,8 @@ import PageLayout from "./components/layout/PageLayout";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
 
-//las rutas privadas utilizarán ProtectedRoute.
-
-const links = [
-  { label: "Catálogo", to: "/catalogo" },
-  { label: "Mis Ofertas", to: "/ofertas" },
-  { label: "Carrito", to: "/carrito" },
-  { label: "Mis Compras", to: "/compras" },
-  { label: "Mis Intercambios", to: "/intercambios" },
-];
-
 const withLayout = (page) => (
-  <PageLayout links={links}>{page}</PageLayout>
+  <PageLayout>{page}</PageLayout>
 );
 
 export default function App() {
@@ -31,8 +20,15 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/registro" element={<RegisterPage />} />
+      <Route
+        path="/login"
+        element={<LoginPage />}
+      />
+
+      <Route
+        path="/registro"
+        element={<RegisterPage />}
+      />
 
       <Route
         path="/intercambios"
@@ -61,7 +57,7 @@ export default function App() {
 
       <Route
         path="/catalogo"
-        element={<CatalogoPage />}
+        element={withLayout(<CatalogoPage />)}
       />
 
       <Route

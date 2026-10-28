@@ -1,14 +1,35 @@
-import { Bell } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Bell, LogOut } from "lucide-react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import Avatar from "../ui/Avatar";
+import { useAuth } from "../../context/AuthContext";
 
-export default function Navbar({
-  user,
-  links = [],
-  onNotifications,
-}) {
+const links = [
+  { label: "Catálogo", to: "/catalogo" },
+  { label: "Mis Ofertas", to: "/ofertas" },
+  { label: "Carrito", to: "/carrito" },
+  { label: "Mis Compras", to: "/compras" },
+  { label: "Mis Intercambios", to: "/intercambios" },
+];
+
+export default function Navbar({ onNotifications }) {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const {
+    autenticado,
+    nombreCompleto,
+    cerrarSesion,
+  } = useAuth();
+
+  function handleLogout() {
+    cerrarSesion();
+    navigate("/login", { replace: true });
+  }
 
   const isActive = (path) => {
     return (
@@ -130,13 +151,12 @@ export default function Navbar({
 
           {/* AVATAR */}
           <Avatar
-            src={user?.avatarUrl}
-            name={user?.name || "Usuario"}
+            name={nombreCompleto || "Usuario"}
             size="md"
           />
 
           {/* NOMBRE */}
-          {user?.name && (
+          {autenticado && (
             <span
               className="
                 hidden
@@ -147,8 +167,37 @@ export default function Navbar({
                 sm:block
               "
             >
-              {user.name}
+              {nombreCompleto || "Usuario"}
             </span>
+          )}
+
+          {/* CERRAR SESIÓN */}
+          {autenticado && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Cerrar sesión"
+              aria-label="Cerrar sesión"
+              className="
+                flex
+                items-center
+                gap-2
+                rounded-lg
+                px-3
+                py-2
+                text-sm
+                font-medium
+                text-[#6B7280]
+                transition-colors
+                hover:bg-[#FEF2F2]
+                hover:text-[#DC2626]
+              "
+            >
+              <LogOut size={17} />
+              <span className="hidden lg:inline">
+                Cerrar sesión
+              </span>
+            </button>
           )}
         </div>
       </nav>

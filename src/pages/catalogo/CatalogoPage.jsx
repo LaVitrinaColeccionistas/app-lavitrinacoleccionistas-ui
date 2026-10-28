@@ -1,36 +1,8 @@
-import PageLayout from "../../components/layout/PageLayout";
 import ProductCard from "../../components/product/ProductCard";
 
+//todo harcodeado
+
 function CatalogoPage() {
-const usuario = {
-    id: 1,
-    name: "Cliente Nombre",
-    avatarUrl: "",
-  };
-
-  const links = [
-    {
-      label: "Catálogo",
-      to: "/catalogo",
-    },
-    {
-      label: "Mis Ofertas",
-      to: "/ofertas",
-    },
-    {
-      label: "Carrito",
-      to: "/carrito",
-    },
-    {
-      label: "Mis Compras",
-      to: "/compras",
-    },
-    {
-      label: "Mis Intercambios",
-      to: "/intercambios",
-    },
-  ];
-
   const productos = [
     {
       id: 1,
@@ -67,44 +39,38 @@ const usuario = {
   };
 
   return (
-    <PageLayout
-      user={usuario}
-      links={links}
-    >
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#1F2937]">
-            Catálogo
-          </h1>
+    <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-[#1F2937]">
+          Catálogo
+        </h1>
 
-          <p className="mt-1 text-sm text-[#6B7280]">
-            Explora artículos publicados por otros
-            coleccionistas.
-          </p>
-        </div>
-
-        <div
-          className="
-            grid
-            grid-cols-1
-            gap-5
-            sm:grid-cols-2
-            lg:grid-cols-3
-          "
-        >
-          {productos.map((producto) => (
-            <ProductCard
-              key={producto.id}
-              product={producto}
-              onView={handleVerProducto}
-              onOffer={handleHacerOferta}
-            />
-          ))}
-        </div>
+        <p className="mt-1 text-sm text-[#6B7280]">
+          Explora artículos publicados por otros
+          coleccionistas.
+        </p>
       </div>
-    </PageLayout>
+
+      <div
+        className="
+          grid
+          grid-cols-1
+          gap-5
+          sm:grid-cols-2
+          lg:grid-cols-3
+        "
+      >
+        {productos.map((producto) => (
+          <ProductCard
+            key={producto.id}
+            product={producto}
+            onView={handleVerProducto}
+            onOffer={handleHacerOferta}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
-
 
 export default CatalogoPage;

@@ -11,6 +11,7 @@ import ItemCompareCard from "../../components/common/ItemCompareCard";
 import Pagination from "../../components/common/Pagination";
 import Table from "../../components/common/Table";
 import { useAuth } from "../../context/AuthContext";
+import ConfirmDeleteModal from "../../components/common/ConfirmDeleteModal";
 
 import {
   obtenerIntercambios,
@@ -19,8 +20,8 @@ import {
 } from "../../services/intercambiosService";
 
 const columnas = [
-  { key: "solicitado", label: "Artículo solicitado" },
-  { key: "ofrecido", label: "Artículo ofrecido" },
+  { key: "solicitado", label: "Artículos solicitados" },
+  { key: "ofrecido", label: "Artículos ofrecidos" },
   { key: "diferencia", label: "Diferencia" },
   { key: "estado", label: "Estado" },
   { key: "fecha", label: "Fecha" },
@@ -88,7 +89,7 @@ export default function IntercambiosPage() {
   const { usuarioId, tieneRol } = useAuth();
   const esAdmin = tieneRol("ADMIN");
   const [eliminando, setEliminando] = useState(false);
-
+  const [modalEliminar, setModalEliminar] = useState(false);
   const [intercambios, setIntercambios] = useState([]);
   const [seleccionado, setSeleccionado] = useState(null);
   const [busqueda, setBusqueda] = useState("");
@@ -222,8 +223,6 @@ export default function IntercambiosPage() {
   async function handleEliminar() {
     if (!seleccionado || eliminando || !esAdmin) return;
 
-    if (!window.confirm("¿Seguro que deseas eliminar este intercambio?")) return;
-
     try {
       setEliminando(true);
       setError("");
@@ -234,12 +233,15 @@ export default function IntercambiosPage() {
       const restantes = intercambios.filter(
         (intercambio) => intercambio.id !== seleccionado.id
       );
+
       setIntercambios(restantes);
       setSeleccionado(restantes[0] ?? null);
+      setModalEliminar(false);
       setMensaje("El intercambio fue eliminado correctamente.");
     } catch (err) {
       console.error(err);
       setError("No fue posible eliminar el intercambio.");
+      setModalEliminar(false);
     } finally {
       setEliminando(false);
     }
@@ -336,14 +338,10 @@ export default function IntercambiosPage() {
           <div className="grid gap-5 md:grid-cols-2">
             <div className="space-y-3">
               {productosSolicitados.length > 0 ? (
-                productosSolicitados.map((detalle, index) => (
+                productosSolicitados.map((detalle) => (
                   <ItemCompareCard
                     key={detalle.id}
-                    title={
-                      index === 0
-                        ? "Artículo solicitado"
-                        : "Artículo solicitado adicional"
-                    }
+                    title="Artículos solicitados"
                     item={convertirDetalleAItem(detalle)}
                   />
                 ))
@@ -385,7 +383,7 @@ export default function IntercambiosPage() {
           </div>
 
           {(puedeAceptarORechazar || puedeCancelar) && (
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-5 flex flex-wrap justify-end gap-3">
               {puedeAceptarORechazar && (
                 <>
                   <Button
@@ -393,7 +391,7 @@ export default function IntercambiosPage() {
                     loading={actualizandoEstado}
                     onClick={() => cambiarEstado("ACEPTADO")}
                   >
-                    Aceptar intercambio
+                    Aceptar
                   </Button>
 
                   <Button
@@ -401,7 +399,7 @@ export default function IntercambiosPage() {
                     disabled={actualizandoEstado}
                     onClick={() => cambiarEstado("RECHAZADO")}
                   >
-                    Rechazar propuesta
+                    Rechazar
                   </Button>
                 </>
               )}
@@ -412,7 +410,7 @@ export default function IntercambiosPage() {
                   disabled={actualizandoEstado}
                   onClick={() => cambiarEstado("CANCELADO")}
                 >
-                  Cancelar propuesta
+                  Cancelar
                 </Button>
               )}
             </div>
@@ -423,9 +421,9 @@ export default function IntercambiosPage() {
                 type="button"
                 variant="outlineDanger"
                 loading={eliminando}
-                onClick={handleEliminar}
+                onClick={() => setModalEliminar(true)}
               >
-                Eliminar intercambio
+                Eliminar
               </Button>
             </div>
           )}
@@ -528,6 +526,15 @@ export default function IntercambiosPage() {
           />
         </div>
       </Card>
+    <ConfirmDeleteModal
+      isOpen={modalEliminar}
+      onClose={() => {
+        if (!eliminando) setModalEliminar(false);
+      }}
+      onConfirm={handleEliminar}
+      elemento="el intercambio"
+      loading={eliminando}
+    />
     </div>
   );
 }

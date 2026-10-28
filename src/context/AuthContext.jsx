@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
+
 import {
   getToken,
   saveToken,
@@ -12,6 +13,7 @@ import {
 } from "../utils/session";
 
 //mantiene el token, el ID del usuario y sus roles disponibles para los componentes.
+
 const AuthContext = createContext(null);
 
 function leerPayload(token) {
@@ -73,6 +75,14 @@ export function AuthProvider({ children }) {
   const payload = useMemo(() => leerPayload(token), [token]);
 
   const usuarioId = obtenerUsuarioId(payload);
+
+  const nombreCompleto = [
+    payload?.nombre,
+    payload?.apellido,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   const roles = useMemo(() => obtenerRoles(payload), [payload]);
 
   const autenticado = Boolean(payload);
@@ -92,12 +102,15 @@ export function AuthProvider({ children }) {
   }
 
   function tieneRol(rol) {
-    return roles.includes(String(rol).replace(/^ROLE_/, ""));
+    return roles.includes(
+      String(rol).replace(/^ROLE_/, "")
+    );
   }
 
   const value = {
     token: autenticado ? token : null,
     usuarioId,
+    nombreCompleto,
     roles,
     autenticado,
     iniciarSesion,
@@ -116,7 +129,9 @@ export function useAuth() {
   const context = useContext(AuthContext);
 
   if (!context) {
-    throw new Error("useAuth debe utilizarse dentro de AuthProvider");
+    throw new Error(
+      "useAuth debe utilizarse dentro de AuthProvider"
+    );
   }
 
   return context;

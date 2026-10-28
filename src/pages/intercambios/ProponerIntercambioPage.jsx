@@ -257,8 +257,7 @@ export default function ProponerIntercambioPage({
           {/* PRODUCTO QUE QUIERE */}
 
           <Card
-            title="Artículo solicitado"
-            subtitle="Artículo seleccionado desde el catálogo."
+            title="Artículos solicitados"
           >
             {productoSolicitado ? (
               <ItemCompareCard
