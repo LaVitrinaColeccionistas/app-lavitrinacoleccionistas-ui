@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeftRight, Search } from "lucide-react";
 
 import Alert from "../../components/common/Alert";
@@ -62,14 +62,6 @@ function obtenerProductos(intercambio, tipo) {
   );
 }
 
-function nombresProductos(detalles) {
-  if (!detalles.length) return "-";
-
-  return detalles
-    .map((detalle) => detalle.nombreProductoSnapshot)
-    .join(", ");
-}
-
 function convertirDetalleAItem(detalle) {
   return {
     nombre: detalle.nombreProductoSnapshot,
@@ -88,8 +80,7 @@ export default function IntercambiosPage() {
           { key: "receptor", label: "Receptor" },
         ]
       : [{ key: "contraparte", label: "Contraparte" }]),
-    { key: "solicitado", label: "Artículos solicitados" },
-    { key: "ofrecido", label: "Artículos ofrecidos" },
+    { key: "publicacion", label: "Publicación" },
     { key: "estado", label: "Estado" },
     { key: "fecha", label: "Fecha" },
     { key: "accion", label: "Acción" },
@@ -101,6 +92,7 @@ export default function IntercambiosPage() {
   const [nombresUsuarios, setNombresUsuarios] = useState({});
   const [seleccionado, setSeleccionado] = useState(null);
   const [busqueda, setBusqueda] = useState("");
+  const [busquedaAplicada, setBusquedaAplicada] = useState("");
   const [pagina, setPagina] = useState(0);
   const [totalPaginas, setTotalPaginas] = useState(0);
   const [cargando, setCargando] = useState(true);
@@ -109,12 +101,21 @@ export default function IntercambiosPage() {
   const [mensaje, setMensaje] = useState("");
 
   useEffect(() => {
+  const timeout = setTimeout(() => {
+    setPagina(0);
+    setBusquedaAplicada(busqueda);
+  }, 400);
+
+  return () => clearTimeout(timeout);
+}, [busqueda]);
+
+  useEffect(() => {
     async function cargarIntercambios() {
       try {
         setCargando(true);
         setError("");
 
-        const data = await obtenerIntercambios(pagina, 10);
+        const data = await obtenerIntercambios(pagina, 10, busquedaAplicada);
         const contenido = data.content ?? [];
 
         setIntercambios(contenido);
@@ -174,31 +175,8 @@ export default function IntercambiosPage() {
     }
 
     cargarIntercambios();
-  }, [pagina]);
+  }, [pagina, busquedaAplicada]);
 
-  const intercambiosFiltrados = useMemo(() => {
-    const texto = busqueda.trim().toLowerCase();
-
-    if (!texto) return intercambios;
-
-    return intercambios.filter((intercambio) => {
-      const ofrecidos = nombresProductos(
-        obtenerProductos(intercambio, "OFRECIDO")
-      ).toLowerCase();
-
-      const solicitados = nombresProductos(
-        obtenerProductos(intercambio, "SOLICITADO")
-      ).toLowerCase();
-
-      const estado = intercambio.estado?.toLowerCase() ?? "";
-
-      return (
-        ofrecidos.includes(texto) ||
-        solicitados.includes(texto) ||
-        estado.includes(texto)
-      );
-    });
-  }, [intercambios, busqueda]);
 
   const esProponente =
     seleccionado != null &&
@@ -292,6 +270,22 @@ export default function IntercambiosPage() {
   function nombreUsuario(id) {
     return nombresUsuarios[id] || "No disponible";
   }
+  
+  function obtenerPagador(intercambio) {
+  const idPagador = intercambio.usuarioPagaDiferencia;
+
+  if (idPagador == null) return "No especificado";
+
+  if (Number(idPagador) === Number(intercambio.idUsuarioProponente)) {
+    return `Proponente: ${nombreUsuario(idPagador)}`;
+  }
+
+  if (Number(idPagador) === Number(intercambio.idUsuarioReceptor)) {
+    return `Receptor: ${nombreUsuario(idPagador)}`;
+  }
+
+  return "No especificado";
+}
 
   function seleccionarIntercambio(intercambio) {
     setSeleccionado(intercambio);
@@ -382,6 +376,12 @@ export default function IntercambiosPage() {
           }
         >
           <div className="grid gap-5 md:grid-cols-2">
+            {seleccionado.tituloPublicacionSnapshot && (
+              <p className="mb-4 text-sm text-[#6B7280]">
+                <span className="font-medium">Publicación:</span>{" "}
+                {seleccionado.tituloPublicacionSnapshot}
+              </p>
+            )}
             <div className="space-y-3">
               {productosSolicitados.length > 0 ? (
                 productosSolicitados.map((detalle) => (
@@ -419,9 +419,19 @@ export default function IntercambiosPage() {
             <p className="text-sm text-[#6B7280]">
               Compensación económica
             </p>
+
             <p className="mt-1 text-lg font-bold text-[#1F2937]">
               {formatearDinero(seleccionado.diferenciaDinero)}
             </p>
+
+            {Number(seleccionado.diferenciaDinero) > 0 && (
+              <p className="mt-2 text-sm text-[#6B7280]">
+                <span className="font-medium">
+                  Paga la diferencia el 
+                </span>{" "}
+                {obtenerPagador(seleccionado)}
+              </p>
+            )}
           </div>
 
           {(puedeAceptarORechazar || puedeCancelar) && (
@@ -503,18 +513,9 @@ export default function IntercambiosPage() {
 
         <Table
           columns={columnas}
-          data={intercambiosFiltrados}
+          data={intercambios}
           emptyMessage="No se encontraron intercambios."
           renderRow={(intercambio) => {
-            const solicitados = obtenerProductos(
-              intercambio,
-              "SOLICITADO"
-            );
-
-            const ofrecidos = obtenerProductos(
-              intercambio,
-              "OFRECIDO"
-            );
 
             return (
               <>
@@ -540,11 +541,7 @@ export default function IntercambiosPage() {
                 )}
 
                 <td className="px-4 py-4 font-medium text-[#1F2937]">
-                  {nombresProductos(solicitados)}
-                </td>
-
-                <td className="px-4 py-4 text-[#4B5563]">
-                  {nombresProductos(ofrecidos)}
+                  {intercambio.tituloPublicacionSnapshot || "Publicación no disponible"}
                 </td>
 
                 <td className="px-4 py-4">
@@ -572,6 +569,7 @@ export default function IntercambiosPage() {
                   </Button>
                 </td>
               </>
+              
             );
           }}
         />

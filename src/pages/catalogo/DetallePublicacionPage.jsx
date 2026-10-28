@@ -97,7 +97,7 @@ export default function DetallePublicacionPage() {
     requerirSesion(() => navigate(`/ofertas?publicacion=${pub.id}`));
 
   // ProponerIntercambioPage envía producto.id como idProducto: debe ser el id del PRODUCTO
-  const proponerIntercambio = () =>
+  /*const proponerIntercambio = () =>
     requerirSesion(() =>
       navigate("/intercambios/nuevo", {
         state: {
@@ -108,6 +108,15 @@ export default function DetallePublicacionPage() {
             estado: principal.estadoConservacion,
             idVendedor: pub.idVendedor,
           },
+        },
+      })
+    );*/
+
+    const proponerIntercambio = () =>
+    requerirSesion(() =>
+      navigate("/intercambios/nuevo", {
+        state: {
+          idPublicacion: pub.id,
         },
       })
     );
