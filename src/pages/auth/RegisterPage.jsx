@@ -18,7 +18,7 @@ export default function RegisterPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     nombre: "", apellido: "", email: "", password: "",
-    telefono: "", direccion: "", tipo: "COMPRADOR",
+    telefono: "", direccionEnvio: "", tipo: "COMPRADOR",
   });
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState("");
@@ -76,7 +76,7 @@ export default function RegisterPage() {
             value={form.telefono} onChange={handleChange} error={errors.telefono} />
           <Input label="Dirección de envío" name="direccion"
             placeholder="Av. Corrientes 1234, CABA"
-            value={form.direccion} onChange={handleChange} error={errors.direccion} />
+            value={form.direccionEnvio} onChange={handleChange} error={errors.direccionEnvio} />
           <RadioGroup label="Tipo de usuario" name="tipo" value={form.tipo}
             onChange={handleChange} options={TIPOS} />
 

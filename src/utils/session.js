@@ -111,3 +111,20 @@ export function getUserRole() {
 
   return null;
 }
+
+export function getNombreCompleto() {
+  const token = getToken();
+  if (!token) return "";
+
+  try {
+    const payload = JSON.parse(
+      atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))
+    );
+
+    return [payload.nombre, payload.apellido]
+      .filter(Boolean)
+      .join(" ");
+  } catch {
+    return "";
+  }
+}

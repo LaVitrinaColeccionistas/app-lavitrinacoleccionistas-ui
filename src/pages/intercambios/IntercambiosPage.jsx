@@ -12,21 +12,13 @@ import Pagination from "../../components/common/Pagination";
 import Table from "../../components/common/Table";
 import { useAuth } from "../../context/AuthContext";
 import ConfirmDeleteModal from "../../components/common/ConfirmDeleteModal";
+import { obtenerNombresUsuarios } from "../../services/authService";
 
 import {
   obtenerIntercambios,
   cambiarEstadoIntercambio,
   eliminarIntercambio,
 } from "../../services/intercambiosService";
-
-const columnas = [
-  { key: "solicitado", label: "Artículos solicitados" },
-  { key: "ofrecido", label: "Artículos ofrecidos" },
-  { key: "diferencia", label: "Diferencia" },
-  { key: "estado", label: "Estado" },
-  { key: "fecha", label: "Fecha" },
-  { key: "accion", label: "Acción" },
-];
 
 const variantesEstado = {
   PROPUESTO: "warning",
@@ -88,9 +80,25 @@ function convertirDetalleAItem(detalle) {
 export default function IntercambiosPage() {
   const { usuarioId, tieneRol } = useAuth();
   const esAdmin = tieneRol("ADMIN");
+
+  const columnas = [
+    ...(esAdmin
+      ? [
+          { key: "proponente", label: "Proponente" },
+          { key: "receptor", label: "Receptor" },
+        ]
+      : [{ key: "contraparte", label: "Contraparte" }]),
+    { key: "solicitado", label: "Artículos solicitados" },
+    { key: "ofrecido", label: "Artículos ofrecidos" },
+    { key: "estado", label: "Estado" },
+    { key: "fecha", label: "Fecha" },
+    { key: "accion", label: "Acción" },
+  ];
+
   const [eliminando, setEliminando] = useState(false);
   const [modalEliminar, setModalEliminar] = useState(false);
   const [intercambios, setIntercambios] = useState([]);
+  const [nombresUsuarios, setNombresUsuarios] = useState({});
   const [seleccionado, setSeleccionado] = useState(null);
   const [busqueda, setBusqueda] = useState("");
   const [pagina, setPagina] = useState(0);
@@ -111,6 +119,40 @@ export default function IntercambiosPage() {
 
         setIntercambios(contenido);
         setTotalPaginas(data.totalPages ?? 0);
+
+        const ids = [
+          ...new Set(
+            contenido.flatMap((intercambio) => [
+              intercambio.idUsuarioProponente,
+              intercambio.idUsuarioReceptor,
+            ])
+          ),
+        ].filter((id) => id != null);
+
+        if (ids.length) {
+          try {
+            const perfiles = await obtenerNombresUsuarios(ids);
+
+            setNombresUsuarios(
+              Object.fromEntries(
+                perfiles.map((perfil) => [
+                  perfil.idUsuario,
+                  [perfil.nombre, perfil.apellido]
+                    .filter(Boolean)
+                    .join(" "),
+                ])
+              )
+            );
+          } catch (error) {
+            console.error(
+              "No fue posible obtener los nombres de usuarios:",
+              error
+            );
+            setNombresUsuarios({});
+          }
+        } else {
+          setNombresUsuarios({});
+        }
 
         setSeleccionado((actual) => {
           if (actual) {
@@ -247,6 +289,10 @@ export default function IntercambiosPage() {
     }
   }
 
+  function nombreUsuario(id) {
+    return nombresUsuarios[id] || "No disponible";
+  }
+
   function seleccionarIntercambio(intercambio) {
     setSeleccionado(intercambio);
     setMensaje("");
@@ -288,10 +334,10 @@ export default function IntercambiosPage() {
 
         <div>
           <h1 className="text-2xl font-bold text-[#1F2937]">
-            Mis Intercambios
+            Intercambios
           </h1>
           <p className="mt-1 text-sm text-[#6B7280]">
-            Consulta y administra tus propuestas de intercambio.
+            Consulta y administra las propuestas de intercambio.
           </p>
         </div>
       </div>
@@ -354,14 +400,10 @@ export default function IntercambiosPage() {
 
             <div className="space-y-3">
               {productosOfrecidos.length > 0 ? (
-                productosOfrecidos.map((detalle, index) => (
+                productosOfrecidos.map((detalle) => (
                   <ItemCompareCard
                     key={detalle.id}
-                    title={
-                      index === 0
-                        ? "Artículo ofrecido"
-                        : "Artículo ofrecido adicional"
-                    }
+                    title="Artículos ofrecidos"
                     item={convertirDetalleAItem(detalle)}
                   />
                 ))
@@ -415,8 +457,9 @@ export default function IntercambiosPage() {
               )}
             </div>
           )}
+
           {esAdmin && (
-            <div className="mt-5">
+            <div className="mt-5 flex justify-end">
               <Button
                 type="button"
                 variant="outlineDanger"
@@ -475,16 +518,33 @@ export default function IntercambiosPage() {
 
             return (
               <>
+                {esAdmin ? (
+                  <>
+                    <td className="px-4 py-4 text-[#4B5563]">
+                      {nombreUsuario(intercambio.idUsuarioProponente)}
+                    </td>
+
+                    <td className="px-4 py-4 text-[#4B5563]">
+                      {nombreUsuario(intercambio.idUsuarioReceptor)}
+                    </td>
+                  </>
+                ) : (
+                  <td className="px-4 py-4 text-[#4B5563]">
+                    {nombreUsuario(
+                      Number(intercambio.idUsuarioProponente) ===
+                        Number(usuarioId)
+                        ? intercambio.idUsuarioReceptor
+                        : intercambio.idUsuarioProponente
+                    )}
+                  </td>
+                )}
+
                 <td className="px-4 py-4 font-medium text-[#1F2937]">
                   {nombresProductos(solicitados)}
                 </td>
 
                 <td className="px-4 py-4 text-[#4B5563]">
                   {nombresProductos(ofrecidos)}
-                </td>
-
-                <td className="px-4 py-4 text-[#4B5563]">
-                  {formatearDinero(intercambio.diferenciaDinero)}
                 </td>
 
                 <td className="px-4 py-4">
@@ -526,15 +586,16 @@ export default function IntercambiosPage() {
           />
         </div>
       </Card>
-    <ConfirmDeleteModal
-      isOpen={modalEliminar}
-      onClose={() => {
-        if (!eliminando) setModalEliminar(false);
-      }}
-      onConfirm={handleEliminar}
-      elemento="el intercambio"
-      loading={eliminando}
-    />
+
+      <ConfirmDeleteModal
+        isOpen={modalEliminar}
+        onClose={() => {
+          if (!eliminando) setModalEliminar(false);
+        }}
+        onConfirm={handleEliminar}
+        elemento="el intercambio"
+        loading={eliminando}
+      />
     </div>
   );
 }
