@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import LoginPage from "./pages/auth/LoginPage";
 import RegisterPage from "./pages/auth/RegisterPage";
 import CatalogoPage from "./pages/catalogo/CatalogoPage";
+import DetallePublicacionPage from "./pages/catalogo/DetallePublicacionPage";
+import OfertasPage from "./pages/ofertas/OfertasPage";
 import IntercambiosPage from "./pages/intercambios/IntercambiosPage";
 import ProponerIntercambioPage from "./pages/intercambios/ProponerIntercambioPage";
 import SoportePage from "./pages/soporte/SoportePage";
@@ -65,6 +67,16 @@ export default function App() {
       <Route
         path="/catalogo"
         element={withLayout(<CatalogoPage />)}
+      />
+      
+      <Route 
+        path="/catalogo/:id" 
+        element={withLayout(<DetallePublicacionPage />)} 
+      />
+
+      <Route
+        path="/ofertas"
+        element={protegida(withLayout(<OfertasPage />))}
       />
 
       <Route

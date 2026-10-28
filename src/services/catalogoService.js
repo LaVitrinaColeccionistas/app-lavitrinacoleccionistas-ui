@@ -66,5 +66,9 @@ export const crearProducto = (datos) =>
 export const obtenerOfertas = ({ page = 0, size = 50, idPublicacion, idComprador, estadoOferta } = {}) =>
   request(`${RUTA_OFERTAS}?${qs({ page, size, idPublicacion, idComprador, estadoOferta })}`);
 
+// OfertaCreateDTO (confirmar con el backend): { idPublicacion, idComprador, montoOfertado, mensaje? }
+export const crearOferta = (datos) =>
+  request(RUTA_OFERTAS, { method: "POST", body: datos });
+
 export const aceptarOferta = (id) => request(`${RUTA_OFERTAS}/${id}/aceptar`, { method: "POST" });
 export const rechazarOferta = (id) => request(`${RUTA_OFERTAS}/${id}/rechazar`, { method: "POST" });

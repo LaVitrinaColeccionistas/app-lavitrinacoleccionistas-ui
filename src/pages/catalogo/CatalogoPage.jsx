@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import ProductCard from "../../components/product/ProductCard";
 import Pagination from "../../components/common/Pagination";
@@ -41,6 +42,7 @@ function publicacionACard(pub) {
 }
 
 export default function CatalogoPage() {
+  const navigate = useNavigate();
   const [publicaciones, setPublicaciones] = useState([]);
   const [pagina, setPagina] = useState(0); // el backend es 0-based
   const [totalPaginas, setTotalPaginas] = useState(0);
@@ -89,13 +91,13 @@ export default function CatalogoPage() {
   }, [pagina, busquedaAplicada]);
 
   const handleVerProducto = (card) => {
-    // TODO: navegar al detalle cuando exista la ruta (p. ej. /catalogo/:id)
+    navigate(`/catalogo/${card.id}`);
     console.log("Ver publicación:", card.id);
   };
 
   const handleHacerOferta = (card) => {
-    // TODO: abrir modal y llamar POST /api/ofertas (OfertaCreateDTO)
-    console.log("Hacer oferta a publicación:", card.id);
+    // Si no hay sesión, ProtectedRoute lleva al login y luego vuelve aquí
+    navigate(`/ofertas?publicacion=${card.id}`);
   };
 
   return (
