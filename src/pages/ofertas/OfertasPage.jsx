@@ -10,6 +10,7 @@ import Pagination from "../../components/common/Pagination";
 import Table from "../../components/common/Table";
 import Textarea from "../../components/common/Textarea";
 import { useAuth } from "../../context/AuthContext";
+import useNombres from "../../hooks/useNombres";
 import {
   crearOferta,
   obtenerOfertas,
@@ -76,7 +77,8 @@ export default function OfertasPage() {
   const [filtros, setFiltros] = useState(filtrosVacios);
   const [pagina, setPagina] = useState(0);
 
-  /* Publicación sobre la que se va a ofertar (viene de ?publicacion=ID) */
+  const nombreDe = useNombres(ofertas.map((o) => o.idVendedor));
+
   useEffect(() => {
     if (!idPublicacion) return undefined;
 
@@ -119,6 +121,7 @@ export default function OfertasPage() {
         lista
           .map((o) => ({
             ...o,
+            idVendedor: porId[o.idPublicacion]?.idVendedor,
             titulo: porId[o.idPublicacion]?.titulo ?? `Publicación #${o.idPublicacion}`,
             imagen: imagenDePublicacion(porId[o.idPublicacion]),
           }))
@@ -205,6 +208,7 @@ export default function OfertasPage() {
 
   const columnas = [
     { key: "articulo", label: "Artículo" },
+    { key: "vendedor", label: "Vendedor" },
     { key: "oferta", label: "Tu Oferta" },
     { key: "estado", label: "Estado" },
     { key: "fecha", label: "Fecha" },
@@ -331,6 +335,9 @@ export default function OfertasPage() {
                       <Miniatura src={o.imagen} />
                       <span className="font-semibold text-[#1F2937]">{o.titulo}</span>
                     </div>
+                  </td>
+                  <td className="px-4 py-4 text-[#4B5563]">
+                    {o.idVendedor != null ? nombreDe(o.idVendedor, `Vendedor #${o.idVendedor}`) : "-"}
                   </td>
                   <td className="px-4 py-4 font-bold text-[#1F2937]">
                     {formatearDinero(o.montoOfertado)}

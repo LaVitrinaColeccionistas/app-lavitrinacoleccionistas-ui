@@ -8,6 +8,8 @@ import {
 import Avatar from "../ui/Avatar";
 import { useAuth } from "../../context/AuthContext";
 import useCantidadCarrito from "../../hooks/useCantidadCarrito";
+import useNombres from "../../hooks/useNombres";
+
 
 const baseLinks = [
   { label: "Catálogo", to: "/catalogo" },
@@ -31,6 +33,8 @@ export default function Navbar({ onNotifications }) {
 
   const cantidadCarrito = useCantidadCarrito(usuarioId);
   const textoCarrito = cantidadCarrito > 99 ? "99+" : String(cantidadCarrito);
+  const nombreDe = useNombres([usuarioId]);
+  const nombreMostrado = nombreCompleto || nombreDe(usuarioId, "Usuario");
 
   const links = tieneRol("VENDEDOR")
     ? [
@@ -177,7 +181,7 @@ export default function Navbar({ onNotifications }) {
 
           {/* AVATAR */}
           <Avatar
-            name={nombreCompleto || "Usuario"}
+            name={nombreMostrado}
             size="md"
           />
 

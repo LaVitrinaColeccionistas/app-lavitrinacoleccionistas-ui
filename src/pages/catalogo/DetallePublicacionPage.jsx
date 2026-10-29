@@ -10,6 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import { obtenerPublicacion } from "../../services/catalogoService";
 import { agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
 import { formatearDinero } from "../vendedor/opciones";
+import useNombres from "../../hooks/useNombres";
 
 const COLOR_RAREZA = {
   "Ultra Raro": "danger",
@@ -62,6 +63,9 @@ export default function DetallePublicacionPage() {
 
   const detalles = useMemo(() => pub?.detalles ?? [], [pub]);
   const principal = detalles[0]?.producto ?? {};
+
+  const nombreDe = useNombres([pub?.idVendedor]);
+  const nombreVendedor = nombreDe(pub?.idVendedor, `Vendedor #${pub?.idVendedor}`);
 
   // Una imagen por producto de la publicación (el backend solo guarda urlImagen por producto)
   const imagenes = useMemo(
@@ -241,11 +245,10 @@ export default function DetallePublicacionPage() {
             </>
           )}
 
-          {/* Vendedor: el contrato no expone perfil (nombre/avatar/antigüedad), solo idVendedor */}
           <div className="mt-6 flex items-center gap-3 rounded-xl border border-[#E5E7EB] bg-white p-4">
-            <Avatar name={`Vendedor ${pub.idVendedor}`} size="lg" />
+            <Avatar name={nombreVendedor} size="lg" />
             <div>
-              <p className="text-sm font-bold text-[#1F2937]">Vendedor #{pub.idVendedor}</p>
+              <p className="text-sm font-bold text-[#1F2937]">{nombreVendedor}</p>
               {esPropia && <p className="text-xs text-[#6B7280]">Es tu publicación</p>}
             </div>
           </div>

@@ -14,11 +14,6 @@ const TAMANO_PAGINA = 9;
 const formatearPrecio = (valor) =>
   `Gs. ${Number(valor).toLocaleString("es-PY")}`;
 
-/**
- * Convierte una Publicacion (con sus detalles/productos) al formato
- * que espera <ProductCard />.
- * Es tolerante con los nombres de campos del DTO: ajusta aquí si difieren.
- */
 function publicacionACard(pub) {
   const detalles =
     pub.detalles ?? pub.detallePublicacion ?? pub.detallesPublicacion ?? [];

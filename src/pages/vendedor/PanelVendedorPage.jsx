@@ -18,6 +18,7 @@ import {
   rechazarOferta,
 } from "../../services/catalogoService";
 import { getUserId } from "../../utils/session";
+import useNombres from "../../hooks/useNombres";
 import { formatearDinero, formatearFecha, imagenDePublicacion } from "./opciones";
 
 const POR_PAGINA = 10;
@@ -67,6 +68,8 @@ export default function PanelVendedorPage() {
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState(state?.mensaje ?? "");
 
+  const nombreDe = useNombres(ofertas.map((o) => o.idComprador));
+
   /* Publicaciones del vendedor + ofertas recibidas en ellas */
   const cargarNegocio = useCallback(async () => {
     if (!idVendedor) return;
@@ -78,7 +81,6 @@ export default function PanelVendedorPage() {
       const pubs = (data?.content ?? []).filter((p) => p.estadoPublicacion !== "CANCELADA");
       setPublicaciones(pubs);
 
-      // No existe filtro por vendedor en /ofertas: se consulta por cada publicación.
       const listas = await Promise.all(
         pubs.map((p) =>
           obtenerOfertas({ idPublicacion: p.id, size: 50 })
@@ -127,8 +129,6 @@ export default function PanelVendedorPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargarNegocio(); }, [cargarNegocio]);
 
-  // El total de productos se necesita para la tarjeta de estadísticas, así que se carga siempre;
-  // en la pestaña "productos" además sigue la página actual.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargarProductos(); }, [cargarProductos]);
 
@@ -184,7 +184,9 @@ export default function PanelVendedorPage() {
       vacio: "Todavía no recibiste ofertas.",
       fila: (o) => (
         <>
-          <td className="px-4 py-4 font-semibold text-[#1F2937]">Comprador #{o.idComprador}</td>
+          <td className="px-4 py-4 font-semibold text-[#1F2937]">
+            {nombreDe(o.idComprador, `Comprador #${o.idComprador}`)}
+          </td>
           <td className="px-4 py-4">
             <div className="flex items-center gap-3">
               <Miniatura src={o.imagen} />
