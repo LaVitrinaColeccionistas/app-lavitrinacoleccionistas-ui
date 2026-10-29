@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeftRight, Search } from "lucide-react";
 
 import Alert from "../../components/common/Alert";
@@ -13,6 +13,7 @@ import Table from "../../components/common/Table";
 import { useAuth } from "../../context/AuthContext";
 import ConfirmDeleteModal from "../../components/common/ConfirmDeleteModal";
 import { obtenerNombresUsuarios } from "../../services/authService";
+import { obtenerProducto } from "../../services/catalogoService";
 
 import {
   obtenerIntercambios,
@@ -25,6 +26,7 @@ const variantesEstado = {
   ACEPTADO: "success",
   RECHAZADO: "danger",
   CANCELADO: "neutral",
+  COMPLETADO: "success",
 };
 
 function formatearEstado(estado) {
@@ -62,10 +64,14 @@ function obtenerProductos(intercambio, tipo) {
   );
 }
 
-function convertirDetalleAItem(detalle) {
+function convertirDetalleAItem(detalle, datosProductos) {
+  const producto = datosProductos[detalle.idProducto];
+
   return {
     nombre: detalle.nombreProductoSnapshot,
     estado: `Cantidad: ${detalle.cantidad}`,
+    imagen: producto?.urlImagen,
+    precio: producto?.precioReferencia,
   };
 }
 
@@ -99,15 +105,17 @@ export default function IntercambiosPage() {
   const [actualizandoEstado, setActualizandoEstado] = useState(false);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [datosProductos, setDatosProductos] = useState({});
+  const productosConsultados = useRef(new Set());
 
   useEffect(() => {
-  const timeout = setTimeout(() => {
-    setPagina(0);
-    setBusquedaAplicada(busqueda);
-  }, 400);
+    const timeout = setTimeout(() => {
+      setPagina(0);
+      setBusquedaAplicada(busqueda);
+    }, 400);
 
-  return () => clearTimeout(timeout);
-}, [busqueda]);
+    return () => clearTimeout(timeout);
+  }, [busqueda]);
 
   useEffect(() => {
     async function cargarIntercambios() {
@@ -115,7 +123,12 @@ export default function IntercambiosPage() {
         setCargando(true);
         setError("");
 
-        const data = await obtenerIntercambios(pagina, 10, busquedaAplicada);
+        const data = await obtenerIntercambios(
+          pagina,
+          10,
+          busquedaAplicada
+        );
+
         const contenido = data.content ?? [];
 
         setIntercambios(contenido);
@@ -177,16 +190,67 @@ export default function IntercambiosPage() {
     cargarIntercambios();
   }, [pagina, busquedaAplicada]);
 
+  useEffect(() => {
+    const ids = [
+      ...new Set(
+        intercambios.flatMap((intercambio) =>
+          (intercambio.detalles ?? []).map(
+            (detalle) => detalle.idProducto
+          )
+        )
+      ),
+    ].filter(
+      (id) =>
+        id != null &&
+        !productosConsultados.current.has(String(id))
+    );
+
+    if (ids.length === 0) return;
+
+    ids.forEach((id) => {
+      productosConsultados.current.add(String(id));
+    });
+
+    async function cargarProductos() {
+      const resultados = await Promise.allSettled(
+        ids.map((id) => obtenerProducto(id))
+      );
+
+      const productos = {};
+
+      resultados.forEach((resultado, index) => {
+        if (resultado.status === "fulfilled") {
+          productos[ids[index]] = resultado.value;
+        } else {
+          console.error(
+            `No fue posible obtener el producto ${ids[index]}`,
+            resultado.reason
+          );
+        }
+      });
+
+      if (Object.keys(productos).length > 0) {
+        setDatosProductos((actuales) => ({
+          ...actuales,
+          ...productos,
+        }));
+      }
+    }
+
+    cargarProductos();
+  }, [intercambios]);
 
   const esProponente =
     seleccionado != null &&
     usuarioId != null &&
-    usuarioId === Number(seleccionado.idUsuarioProponente);
+    Number(usuarioId) ===
+      Number(seleccionado.idUsuarioProponente);
 
   const esReceptor =
     seleccionado != null &&
     usuarioId != null &&
-    usuarioId === Number(seleccionado.idUsuarioReceptor);
+    Number(usuarioId) ===
+      Number(seleccionado.idUsuarioReceptor);
 
   const puedeAceptarORechazar =
     seleccionado?.estado === "PROPUESTO" && esReceptor;
@@ -194,14 +258,19 @@ export default function IntercambiosPage() {
   const puedeCancelar =
     seleccionado?.estado === "PROPUESTO" && esProponente;
 
+  const puedeCompletar =
+    seleccionado?.estado === "ACEPTADO" && esReceptor;
+
   async function cambiarEstado(nuevoEstado) {
     if (!seleccionado || actualizandoEstado) return;
 
     const permitido =
       nuevoEstado === "CANCELADO"
         ? puedeCancelar
-        : ["ACEPTADO", "RECHAZADO"].includes(nuevoEstado) &&
-          puedeAceptarORechazar;
+        : nuevoEstado === "COMPLETADO"
+          ? puedeCompletar
+          : ["ACEPTADO", "RECHAZADO"].includes(nuevoEstado) &&
+            puedeAceptarORechazar;
 
     if (!permitido) return;
 
@@ -230,7 +299,9 @@ export default function IntercambiosPage() {
           ? "El intercambio fue aceptado correctamente."
           : nuevoEstado === "RECHAZADO"
             ? "La propuesta fue rechazada correctamente."
-            : "La propuesta fue cancelada correctamente."
+            : nuevoEstado === "COMPLETADO"
+              ? "El intercambio fue completado correctamente."
+              : "La propuesta fue cancelada correctamente."
       );
     } catch (err) {
       console.error(err);
@@ -270,22 +341,28 @@ export default function IntercambiosPage() {
   function nombreUsuario(id) {
     return nombresUsuarios[id] || "No disponible";
   }
-  
+
   function obtenerPagador(intercambio) {
-  const idPagador = intercambio.usuarioPagaDiferencia;
+    const idPagador = intercambio.usuarioPagaDiferencia;
 
-  if (idPagador == null) return "No especificado";
+    if (idPagador == null) return "No especificado";
 
-  if (Number(idPagador) === Number(intercambio.idUsuarioProponente)) {
-    return `Proponente: ${nombreUsuario(idPagador)}`;
+    if (
+      Number(idPagador) ===
+      Number(intercambio.idUsuarioProponente)
+    ) {
+      return `Proponente: ${nombreUsuario(idPagador)}`;
+    }
+
+    if (
+      Number(idPagador) ===
+      Number(intercambio.idUsuarioReceptor)
+    ) {
+      return `Receptor: ${nombreUsuario(idPagador)}`;
+    }
+
+    return "No especificado";
   }
-
-  if (Number(idPagador) === Number(intercambio.idUsuarioReceptor)) {
-    return `Receptor: ${nombreUsuario(idPagador)}`;
-  }
-
-  return "No especificado";
-}
 
   function seleccionarIntercambio(intercambio) {
     setSeleccionado(intercambio);
@@ -303,7 +380,7 @@ export default function IntercambiosPage() {
     "OFRECIDO"
   );
 
-  if (cargando) {
+  if (cargando && !busquedaAplicada && intercambios.length === 0) {
     return (
       <div className="mx-auto max-w-7xl px-6 py-8">
         <Card>
@@ -375,20 +452,23 @@ export default function IntercambiosPage() {
             </Badge>
           }
         >
+          {seleccionado.tituloPublicacionSnapshot && (
+            <p className="mb-5 text-sm text-[#6B7280]">
+              <span className="font-medium">
+                Publicación:
+              </span>{" "}
+              {seleccionado.tituloPublicacionSnapshot}
+            </p>
+          )}
+
           <div className="grid gap-5 md:grid-cols-2">
-            {seleccionado.tituloPublicacionSnapshot && (
-              <p className="mb-4 text-sm text-[#6B7280]">
-                <span className="font-medium">Publicación:</span>{" "}
-                {seleccionado.tituloPublicacionSnapshot}
-              </p>
-            )}
             <div className="space-y-3">
               {productosSolicitados.length > 0 ? (
                 productosSolicitados.map((detalle) => (
                   <ItemCompareCard
                     key={detalle.id}
                     title="Artículos solicitados"
-                    item={convertirDetalleAItem(detalle)}
+                    item={convertirDetalleAItem(detalle, datosProductos)}
                   />
                 ))
               ) : (
@@ -404,7 +484,7 @@ export default function IntercambiosPage() {
                   <ItemCompareCard
                     key={detalle.id}
                     title="Artículos ofrecidos"
-                    item={convertirDetalleAItem(detalle)}
+                    item={convertirDetalleAItem(detalle, datosProductos)}
                   />
                 ))
               ) : (
@@ -427,14 +507,16 @@ export default function IntercambiosPage() {
             {Number(seleccionado.diferenciaDinero) > 0 && (
               <p className="mt-2 text-sm text-[#6B7280]">
                 <span className="font-medium">
-                  Paga la diferencia el 
+                  Paga la diferencia el
                 </span>{" "}
                 {obtenerPagador(seleccionado)}
               </p>
             )}
           </div>
 
-          {(puedeAceptarORechazar || puedeCancelar) && (
+          {(puedeAceptarORechazar ||
+            puedeCancelar ||
+            puedeCompletar) && (
             <div className="mt-5 flex flex-wrap justify-end gap-3">
               {puedeAceptarORechazar && (
                 <>
@@ -463,6 +545,16 @@ export default function IntercambiosPage() {
                   onClick={() => cambiarEstado("CANCELADO")}
                 >
                   Cancelar
+                </Button>
+              )}
+
+              {puedeCompletar && (
+                <Button
+                  variant="success"
+                  loading={actualizandoEstado}
+                  onClick={() => cambiarEstado("COMPLETADO")}
+                >
+                  Completado
                 </Button>
               )}
             </div>
@@ -504,8 +596,10 @@ export default function IntercambiosPage() {
             <Input
               name="busqueda"
               value={busqueda}
-              onChange={(event) => setBusqueda(event.target.value)}
-              placeholder="Buscar intercambio..."
+              onChange={(event) =>
+                setBusqueda(event.target.value)
+              }
+              placeholder="Buscar por estado y publicacion ..."
               className="[&_input]:pl-10"
             />
           </div>
@@ -516,17 +610,20 @@ export default function IntercambiosPage() {
           data={intercambios}
           emptyMessage="No se encontraron intercambios."
           renderRow={(intercambio) => {
-
             return (
               <>
                 {esAdmin ? (
                   <>
                     <td className="px-4 py-4 text-[#4B5563]">
-                      {nombreUsuario(intercambio.idUsuarioProponente)}
+                      {nombreUsuario(
+                        intercambio.idUsuarioProponente
+                      )}
                     </td>
 
                     <td className="px-4 py-4 text-[#4B5563]">
-                      {nombreUsuario(intercambio.idUsuarioReceptor)}
+                      {nombreUsuario(
+                        intercambio.idUsuarioReceptor
+                      )}
                     </td>
                   </>
                 ) : (
@@ -541,13 +638,15 @@ export default function IntercambiosPage() {
                 )}
 
                 <td className="px-4 py-4 font-medium text-[#1F2937]">
-                  {intercambio.tituloPublicacionSnapshot || "Publicación no disponible"}
+                  {intercambio.tituloPublicacionSnapshot ||
+                    "Publicación no disponible"}
                 </td>
 
                 <td className="px-4 py-4">
                   <Badge
                     variant={
-                      variantesEstado[intercambio.estado] ?? "neutral"
+                      variantesEstado[intercambio.estado] ??
+                      "neutral"
                     }
                     size="sm"
                   >
@@ -563,13 +662,14 @@ export default function IntercambiosPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => seleccionarIntercambio(intercambio)}
+                    onClick={() =>
+                      seleccionarIntercambio(intercambio)
+                    }
                   >
                     Ver detalle
                   </Button>
                 </td>
               </>
-              
             );
           }}
         />
