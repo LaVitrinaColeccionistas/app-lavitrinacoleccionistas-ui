@@ -5,7 +5,10 @@ import { useNavigate } from "react-router-dom";
 import ProductCard from "../../components/product/ProductCard";
 import Pagination from "../../components/common/Pagination";
 import Alert from "../../components/common/Alert";
+import { Link } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import { obtenerPublicaciones } from "../../services/catalogoService";
+import { agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
 const TAMANO_PAGINA = 9;
 
 const formatearPrecio = (valor) =>
@@ -38,11 +41,15 @@ function publicacionACard(pub) {
     imagen: producto.urlImagen,
     precio,
     idVendedor: pub.idVendedor,
+    publicacion: pub,
   };
 }
 
 export default function CatalogoPage() {
   const navigate = useNavigate();
+  const { usuarioId, autenticado, tieneRol } = useAuth();
+  const puedeComprar = !autenticado || tieneRol("COMPRADOR") || tieneRol("ADMIN");
+  const [avisoCarrito, setAvisoCarrito] = useState(null);
   const [publicaciones, setPublicaciones] = useState([]);
   const [pagina, setPagina] = useState(0); // el backend es 0-based
   const [totalPaginas, setTotalPaginas] = useState(0);
@@ -95,6 +102,25 @@ export default function CatalogoPage() {
     console.log("Ver publicación:", card.id);
   };
 
+  const handleAgregarCarrito = (card) => {
+    if (!autenticado) {
+      navigate("/login", { state: { from: "/catalogo" } });
+      return;
+    }
+
+    if (card.idVendedor === usuarioId) {
+      setAvisoCarrito({ variant: "warning", texto: "No podés comprar tu propia publicación." });
+      return;
+    }
+
+    const agregados = agregarAlCarrito(usuarioId, entradasDePublicacion(card.publicacion));
+    setAvisoCarrito(
+      agregados > 0
+        ? { variant: "success", texto: `"${card.nombre}" se agregó a tu carrito.` }
+        : { variant: "info", texto: "Ya tenés el máximo disponible de esta publicación en tu carrito." }
+    );
+  };
+
   const handleHacerOferta = (card) => {
     // Si no hay sesión, ProtectedRoute lleva al login y luego vuelve aquí
     navigate(`/ofertas?publicacion=${card.id}`);
@@ -124,6 +150,17 @@ export default function CatalogoPage() {
           />
         </div>
 
+        {avisoCarrito && (
+          <Alert variant={avisoCarrito.variant} className="mb-6" onClose={() => setAvisoCarrito(null)}>
+            {avisoCarrito.texto}{" "}
+            {avisoCarrito.variant === "success" && (
+              <Link to="/carrito" className="font-semibold underline">
+                Ver carrito
+              </Link>
+            )}
+          </Alert>
+        )}
+
         {error && (
           <Alert variant="danger" className="mb-6" onClose={() => setError("")}>
             {error}
@@ -146,6 +183,7 @@ export default function CatalogoPage() {
                 product={card}
                 onView={handleVerProducto}
                 onOffer={handleHacerOferta}
+                onAddToCart={puedeComprar ? handleAgregarCarrito : undefined}
               />
             ))}
           </div>

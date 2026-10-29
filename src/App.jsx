@@ -11,6 +11,11 @@ import SoportePage from "./pages/soporte/SoportePage";
 import PanelVendedorPage from "./pages/vendedor/PanelVendedorPage";
 import NuevaPublicacionPage from "./pages/vendedor/NuevaPublicacionPage";
 import NuevoProductoPage from "./pages/vendedor/NuevoProductoPage";
+import CarritoPage from "./pages/compras/CarritoPage";
+import ComprasPage from "./pages/compras/ComprasPage";
+import SolicitudesRegistroPage from "./pages/admin/SolicitudesRegistroPage";
+import NotFoundPage from "./pages/errores/NotFoundPage";
+import ServerErrorPage from "./pages/errores/ServerErrorPage";
 
 import PageLayout from "./components/layout/PageLayout";
 import ProtectedRoute from "./components/common/ProtectedRoute";
@@ -26,6 +31,8 @@ const protegida = (page, roles) => (
 );
 
 const vendedor = ["VENDEDOR"];
+const admin = ["ADMIN"];
+const comprador = ["COMPRADOR", "ADMIN"];
 
 // Panel del vendedor de fondo + formulario encima con fondo oscuro
 function FormularioVendedor({ children }) {
@@ -127,7 +134,27 @@ export default function App() {
       />
 
       <Route
-        path="*"
+        path="/carrito"
+        element={protegida(withLayout(<CarritoPage />), comprador)}
+      />
+
+      <Route
+        path="/compras"
+        element={protegida(withLayout(<ComprasPage />))}
+      />
+
+      <Route
+        path="/compras/:id/editar"
+        element={protegida(withLayout(<CarritoPage />), comprador)}
+      />
+
+      <Route
+        path="/admin/solicitudes"
+        element={protegida(withLayout(<SolicitudesRegistroPage />), admin)}
+      />
+
+      <Route
+        path="/"
         element={
           <Navigate
             to={autenticado ? inicio : "/login"}
@@ -135,6 +162,12 @@ export default function App() {
           />
         }
       />
+
+      <Route path="/error" element={<ServerErrorPage />} />
+
+      <Route path="/404" element={<NotFoundPage />} />
+
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

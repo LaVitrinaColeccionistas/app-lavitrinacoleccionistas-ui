@@ -7,6 +7,7 @@ import {
 
 import Avatar from "../ui/Avatar";
 import { useAuth } from "../../context/AuthContext";
+import useCantidadCarrito from "../../hooks/useCantidadCarrito";
 
 const baseLinks = [
   { label: "Catálogo", to: "/catalogo" },
@@ -22,10 +23,14 @@ export default function Navbar({ onNotifications }) {
 
   const {
     autenticado,
+    usuarioId,
     nombreCompleto,
     cerrarSesion,
     tieneRol,
   } = useAuth();
+
+  const cantidadCarrito = useCantidadCarrito(usuarioId);
+  const textoCarrito = cantidadCarrito > 99 ? "99+" : String(cantidadCarrito);
 
   const links = tieneRol("VENDEDOR")
     ? [
@@ -34,6 +39,10 @@ export default function Navbar({ onNotifications }) {
         { label: "Intercambios", to: "/intercambios" },
       ]
     : baseLinks;
+
+  const enlaces = tieneRol("ADMIN")
+    ? [...links, { label: "Configuración", to: "/admin/solicitudes" }]
+    : links;
 
   function handleLogout() {
     cerrarSesion();
@@ -105,7 +114,7 @@ export default function Navbar({ onNotifications }) {
             md:flex
           "
         >
-          {links.map((link) => {
+          {enlaces.map((link) => {
             const active = isActive(link.to);
 
             return (
@@ -125,6 +134,14 @@ export default function Navbar({ onNotifications }) {
                 `}
               >
                 {link.label}
+                {link.to === "/carrito" && cantidadCarrito > 0 && (
+                  <span
+                    aria-label={`${cantidadCarrito} productos en el carrito`}
+                    className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5146E5] px-1.5 align-middle text-[11px] font-bold leading-none text-white"
+                  >
+                    {textoCarrito}
+                  </span>
+                )}
               </Link>
             );
           })}

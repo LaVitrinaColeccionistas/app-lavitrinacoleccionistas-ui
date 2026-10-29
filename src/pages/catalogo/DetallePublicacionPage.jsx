@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import Alert from "../../components/common/Alert";
 import Avatar from "../../components/ui/Avatar";
@@ -8,6 +8,7 @@ import Breadcrumb from "../../components/layout/Breadcrumb";
 import Button from "../../components/common/Button";
 import { useAuth } from "../../context/AuthContext";
 import { obtenerPublicacion } from "../../services/catalogoService";
+import { agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
 import { formatearDinero } from "../vendedor/opciones";
 
 const COLOR_RAREZA = {
@@ -26,12 +27,13 @@ const ESTADO_PUB = {
 export default function DetallePublicacionPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { usuarioId, autenticado } = useAuth();
+  const { usuarioId, autenticado, tieneRol } = useAuth();
 
   const [pub, setPub] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [indiceImg, setIndiceImg] = useState(0);
+  const [avisoCarrito, setAvisoCarrito] = useState(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -92,6 +94,24 @@ export default function DetallePublicacionPage() {
     }
     accion();
   };
+
+  const puedeComprar = !autenticado || tieneRol("COMPRADOR") || tieneRol("ADMIN");
+
+  const agregarCarrito = () =>
+    requerirSesion(() => {
+      const agregados = agregarAlCarrito(usuarioId, entradasDePublicacion(pub));
+      setAvisoCarrito(
+        agregados > 0
+          ? { variant: "success", texto: "Se agregó a tu carrito." }
+          : { variant: "info", texto: "Ya tenés el máximo disponible de esta publicación en tu carrito." }
+      );
+    });
+
+  const comprarAhora = () =>
+    requerirSesion(() => {
+      agregarAlCarrito(usuarioId, entradasDePublicacion(pub));
+      navigate("/carrito");
+    });
 
   const hacerOferta = () =>
     requerirSesion(() => navigate(`/ofertas?publicacion=${pub.id}`));
@@ -241,15 +261,38 @@ export default function DetallePublicacionPage() {
               <Alert variant="info">No podés ofertar ni comprar en tu propia publicación.</Alert>
             )}
 
+            {avisoCarrito && (
+              <Alert variant={avisoCarrito.variant} onClose={() => setAvisoCarrito(null)}>
+                {avisoCarrito.texto}{" "}
+                {avisoCarrito.variant === "success" && (
+                  <Link to="/carrito" className="font-semibold underline">
+                    Ver carrito
+                  </Link>
+                )}
+              </Alert>
+            )}
+
             {pub.tipoVenta === "PRECIO_FIJO" && (
-              <Button
-                size="lg"
-                fullWidth
-                disabled
-                title="Pendiente de conectar con órdenes de compra (MS2)"
-              >
-                Comprar ahora (Coordinar pago)
-              </Button>
+              <>
+                <Button
+                  size="lg"
+                  fullWidth
+                  disabled={!puedeActuar || !puedeComprar}
+                  onClick={comprarAhora}
+                >
+                  Comprar ahora (Coordinar pago)
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="lg"
+                  fullWidth
+                  disabled={!puedeActuar || !puedeComprar}
+                  onClick={agregarCarrito}
+                >
+                  Agregar al carrito
+                </Button>
+              </>
             )}
 
             <Button

@@ -4,6 +4,7 @@ export default function ProductCard({
   product,
   onView,
   onOffer,
+  onAddToCart,
   className = "",
 }) {
   if (!product) {
@@ -145,6 +146,18 @@ export default function ProductCard({
             Hacer oferta
           </Button>
         </div>
+
+        {onAddToCart && (
+          <Button
+            variant="outlineSuccess"
+            size="sm"
+            fullWidth
+            className="mt-2"
+            onClick={() => onAddToCart(product)}
+          >
+            Agregar al carrito
+          </Button>
+        )}
       </div>
     </article>
   );
