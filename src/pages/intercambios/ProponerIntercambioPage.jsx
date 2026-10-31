@@ -162,7 +162,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
           Number(detalle.cantidadPublicada) < 1
       )
     ) {
-      setError("La publicación no contiene artículos válidos.");
+      setError("La publicación no contiene productos válidos.");
       return;
     }
 
@@ -248,7 +248,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
             Proponer nuevo intercambio
           </h1>
           <p className="mt-1 text-sm text-[#6B7280]">
-            Seleccioná los artículos que querés ofrecer.
+            Seleccioná los productos que querés ofrecer.
           </p>
         </div>
       </div>
@@ -271,7 +271,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
 
       <form onSubmit={enviar} className="space-y-5">
         <Card
-          title="Artículos solicitados"
+          title="Productos solicitados"
           subtitle={publicacion?.titulo ?? "Productos de la publicación"}
         >
           {solicitados.length ? (
@@ -318,7 +318,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
           )}
           {solicitados.length > 0 && (
             <div className="mt-4 flex justify-between gap-4 border-t border-[#E5E7EB] pt-4 text-sm">
-              <span className="font-semibold text-[#374151]">Total de referencia de la publicación</span>
+              <span className="font-semibold text-[#374151]">Total de la publicación</span>
               <strong className="text-[#1F2937]">
                 {solicitados.some((detalle) => detalle.precioUnitario == null)
                   ? "No disponible"
@@ -335,7 +335,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
         </Card>
 
         <Card
-          title="Tus artículos ofrecidos"
+          title="Tus productos ofrecidos"
           subtitle="Seleccioná uno o varios de tus productos."
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
