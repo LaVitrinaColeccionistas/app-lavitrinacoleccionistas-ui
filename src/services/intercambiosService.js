@@ -1,12 +1,26 @@
 import { request } from "./api";
 const RUTA = "/api/intercambios";
 
-export const obtenerIntercambios = (page = 0, size = 10, busqueda = "") => {
+export const obtenerIntercambios = (
+  page = 0,
+  size = 10,
+  busqueda = "",
+  estado = "",
+  fechaDesde = "",
+  fechaHasta = ""
+) => {
   const params = new URLSearchParams({ page, size });
 
   if (busqueda.trim()) {
     params.set("busqueda", busqueda.trim());
   }
+
+  if (estado) {
+    params.set("estado", estado);
+  }
+
+  if (fechaDesde) params.set("fechaDesde", fechaDesde);
+  if (fechaHasta) params.set("fechaHasta", fechaHasta);
 
   return request(`${RUTA}?${params.toString()}`);
 };

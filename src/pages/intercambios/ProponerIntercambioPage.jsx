@@ -8,6 +8,7 @@ import Button from "../../components/common/Button";
 import Card from "../../components/common/Card";
 import Input from "../../components/common/Input";
 import MultiSelect from "../../components/common/MultiSelect";
+import NuevoProductoPage from "../vendedor/NuevoProductoPage";
 
 import {
   obtenerPublicacion,
@@ -41,6 +42,8 @@ export default function ProponerIntercambioPage({ usuarioId }) {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [pagadorDiferencia, setPagadorDiferencia] = useState("PROPONENTE");
+  const [modalNuevoProducto, setModalNuevoProducto] = useState(false);
+  const [recargaProductos, setRecargaProductos] = useState(0);
 
   useEffect(() => {
     if (!idPublicacion) return;
@@ -101,7 +104,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
     return () => {
       activo = false;
     };
-  }, [usuarioId, pagina, busqueda]);
+  }, [usuarioId, pagina, busqueda, recargaProductos]);
 
   const solicitados = publicacion?.detalles ?? [];
 
@@ -313,59 +316,89 @@ export default function ProponerIntercambioPage({ usuarioId }) {
               No hay productos en esta publicación.
             </p>
           )}
+          {solicitados.length > 0 && (
+            <div className="mt-4 flex justify-between gap-4 border-t border-[#E5E7EB] pt-4 text-sm">
+              <span className="font-semibold text-[#374151]">Total de referencia de la publicación</span>
+              <strong className="text-[#1F2937]">
+                {solicitados.some((detalle) => detalle.precioUnitario == null)
+                  ? "No disponible"
+                  : dinero(
+                      solicitados.reduce(
+                        (total, detalle) =>
+                          total + Number(detalle.precioUnitario) * Number(detalle.cantidadPublicada ?? 0),
+                        0
+                      )
+                    )}
+              </strong>
+            </div>
+          )}
         </Card>
 
         <Card
           title="Tus artículos ofrecidos"
           subtitle="Seleccioná uno o varios de tus productos."
         >
-          <MultiSelect
-            items={misProductos.map((producto) => ({
-              ...producto,
-              descripcion: `${dinero(producto.precioReferencia)} · Stock: ${producto.stock ?? 0}`,
-            }))}
-            selectedIds={ofrecidos.map((producto) => producto.id)}
-            onToggle={alternarProducto}
-            search={busqueda}
-            onSearchChange={cambiarBusqueda}
-            loading={buscando}
-            placeholder="Buscar y seleccionar mis productos..."
-            footer={
-              totalPaginas > 1 ? (
-                <div className="flex items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={pagina === 0}
-                    onClick={() => {
-                      setBuscando(true);
-                      setPagina((actual) => actual - 1);
-                    }}
-                  >
-                    Anterior
-                  </Button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <div className="min-w-0 flex-1">
+              <MultiSelect
+                items={misProductos.map((producto) => ({
+                  ...producto,
+                  descripcion: `${dinero(producto.precioReferencia)} · Stock: ${producto.stock ?? 0}`,
+                }))}
+                selectedIds={ofrecidos.map((producto) => producto.id)}
+                onToggle={alternarProducto}
+                search={busqueda}
+                onSearchChange={cambiarBusqueda}
+                loading={buscando}
+                placeholder="Buscar y seleccionar mis productos..."
+                footer={
+                  totalPaginas > 1 ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={pagina === 0}
+                        onClick={() => {
+                          setBuscando(true);
+                          setPagina((actual) => actual - 1);
+                        }}
+                      >
+                        Anterior
+                      </Button>
 
-                  <span className="text-xs text-[#6B7280]">
-                    {pagina + 1} de {totalPaginas}
-                  </span>
+                      <span className="text-xs text-[#6B7280]">
+                        {pagina + 1} de {totalPaginas}
+                      </span>
 
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={pagina + 1 >= totalPaginas}
-                    onClick={() => {
-                      setBuscando(true);
-                      setPagina((actual) => actual + 1);
-                    }}
-                  >
-                    Siguiente
-                  </Button>
-                </div>
-              ) : null
-            }
-          />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={pagina + 1 >= totalPaginas}
+                        onClick={() => {
+                          setBuscando(true);
+                          setPagina((actual) => actual + 1);
+                        }}
+                      >
+                        Siguiente
+                      </Button>
+                    </div>
+                  ) : null
+                }
+              />
+            </div>
+
+            <div className="shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setModalNuevoProducto(true)}
+              >
+                + Nuevo Producto
+              </Button>
+            </div>
+          </div>
 
           {ofrecidos.length > 0 && (
             <div className="mt-4">
@@ -426,6 +459,20 @@ export default function ProponerIntercambioPage({ usuarioId }) {
                   </div>
                 ))}
               </div>
+              <div className="mt-3 flex justify-between gap-4 text-sm">
+                <span className="font-semibold text-[#374151]">Total de referencia ofrecido</span>
+                <strong className="text-[#1F2937]">
+                  {ofrecidos.some((producto) => producto.precioReferencia == null)
+                    ? "No disponible"
+                    : dinero(
+                        ofrecidos.reduce(
+                          (total, producto) =>
+                            total + Number(producto.precioReferencia) * Number(producto.cantidad ?? 0),
+                          0
+                        )
+                      )}
+                </strong>
+              </div>
             </div>
           )}
         </Card>
@@ -445,6 +492,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
             }
             placeholder="0"
           />
+
           {Number(diferenciaDinero) > 0 && (
             <div className="mt-4">
               <p className="mb-2 text-sm font-medium text-[#374151]">
@@ -500,6 +548,31 @@ export default function ProponerIntercambioPage({ usuarioId }) {
           </Button>
         </div>
       </form>
+
+      {modalNuevoProducto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+            <button
+              type="button"
+              aria-label="Cerrar"
+              onClick={() => setModalNuevoProducto(false)}
+              className="absolute right-4 top-4 z-10 text-xl text-gray-500 hover:text-gray-800"
+            >
+              ×
+            </button>
+            <NuevoProductoPage
+              onCancel={() => setModalNuevoProducto(false)}
+              onCreated={() => {
+                setModalNuevoProducto(false);
+                setBusqueda("");
+                setPagina(0);
+                setBuscando(true);
+                setRecargaProductos((actual) => actual + 1);
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

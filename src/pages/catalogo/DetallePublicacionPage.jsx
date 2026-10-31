@@ -315,7 +315,7 @@ export default function DetallePublicacionPage() {
               disabled={!puedeActuar || !principal.id}
               onClick={proponerIntercambio}
             >
-              Proponer intercambio de figuras
+              Proponer intercambio
             </Button>
           </div>
         </div>

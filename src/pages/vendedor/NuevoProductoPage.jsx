@@ -35,7 +35,7 @@ function validar(f) {
   return e;
 }
 
-export default function NuevoProductoPage() {
+export default function NuevoProductoPage({ onCancel, onCreated }) {
   const navigate = useNavigate();
   const idVendedor = getUserId();
 
@@ -70,7 +70,8 @@ export default function NuevoProductoPage() {
         precioReferencia: Number(form.precioReferencia),
         urlImagen: form.urlImagen.trim() || undefined,
       });
-      navigate("/vendedor", { state: { tab: "productos", mensaje: "Producto creado correctamente." } });
+      if (onCreated) onCreated();
+      else navigate("/vendedor", { state: { tab: "productos", mensaje: "Producto creado correctamente." } });
     } catch (err) {
       setApiError(err.message);
     } finally {
@@ -113,7 +114,7 @@ export default function NuevoProductoPage() {
             helperText="Opcional. Se muestra en el catálogo." />
 
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" fullWidth onClick={() => navigate("/vendedor")}>
+            <Button type="button" variant="outline" fullWidth onClick={() => onCancel ? onCancel() : navigate("/vendedor")}>
               Cancelar
             </Button>
             <Button type="submit" fullWidth loading={loading}>
