@@ -4,8 +4,7 @@ export const CATEGORIAS = ["Figuras", "Cartas", "Videojuegos", "Consolas", "Cóm
 export const ESTADOS_CONSERVACION = ["Nuevo", "Mint", "Near Mint", "Excelente", "Buen Estado", "Detalles"].map((v) => opt(v));
 export const RAREZAS = ["Común", "Poco Común", "Raro", "Ultra Raro"].map((v) => opt(v));
 
-export const TIPOS_VENTA = [opt("PRECIO_FIJO", "Precio Fijo"), opt("OFERTA_LIBRE", "Oferta Libre")];
-export const ESTADOS_PUBLICACION = [opt("ACTIVA", "Activa"), opt("PAUSADA", "Pausada")];
+export const TIPOS_VENTA = [opt("PRECIO_FIJO", "Precio fijo"), opt("OFERTA_LIBRE", "Subasta")];export const ESTADOS_PUBLICACION = [opt("ACTIVA", "Activa"), opt("PAUSADA", "Pausada")];
 
 export const formatearDinero = (valor) =>
   new Intl.NumberFormat("es-PY", { style: "currency", currency: "PYG", maximumFractionDigits: 0 }).format(Number(valor ?? 0));

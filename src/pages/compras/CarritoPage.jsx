@@ -12,9 +12,10 @@ import Breadcrumb from "../../components/layout/Breadcrumb";
 import Modal from "../../components/ui/Modal";
 import { useAuth } from "../../context/AuthContext";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
-import { obtenerPublicacion, obtenerPublicaciones } from "../../services/catalogoService";
-import { actualizarOrden, crearOrden, obtenerOrden } from "../../services/comprasService";
+import { crearReserva, obtenerPublicacion, obtenerPublicaciones } from "../../services/catalogoService";
+import { actualizarEstadoOrden, actualizarOrden, cancelarOrden, crearOrden, obtenerOrden } from "../../services/comprasService";
 import { HORAS_DE_VIGENCIA, guardarCarrito, leerCarrito } from "../../utils/carrito";
+import { ApiError } from "../../services/api";
 import { resolverError } from "../../utils/errores";
 import { METODOS_PAGO, formatearDinero, imagenDePublicacion } from "./opciones";
 
@@ -33,6 +34,22 @@ const resumenPublicacion = (pub) => {
   const desde = precios.length ? formatearDinero(Math.min(...precios)) : "-";
   return `${cantidad} ${cantidad === 1 ? "producto" : "productos"} · desde ${desde}`;
 };
+
+// La reserva va por idDetallePublicacion; el carrito guarda idPublicacion + idProducto
+async function itemsDeReserva(items) {
+  const ids = [...new Set(items.map((i) => i.idPublicacion))];
+  const pubs = await Promise.all(ids.map((id) => obtenerPublicacion(id)));
+  const porPub = new Map(pubs.map((p) => [String(p.id), p]));
+
+  return items.map((i) => {
+    const detalle = porPub.get(String(i.idPublicacion))?.detalles?.find(
+      (d) => String(d.producto?.id) === String(i.idProducto)
+    );
+    // ApiError con status: resolverError trata los errores sin status como críticos (/error)
+    if (!detalle) throw new ApiError(409, `El producto ${i.idProducto} ya no está en la publicación`);
+    return { idDetallePublicacion: detalle.id, cantidad: Number(i.cantidad) };
+  });
+}
 
 const itemVacio = { idPublicacion: "", idProducto: "", cantidad: "1" };
 
@@ -314,7 +331,16 @@ export default function CarritoPage() {
       if (editando) {
         await actualizarOrden(id, datos);
       } else {
-        await crearOrden(datos);
+        const orden = await crearOrden(datos);
+        try {
+          await crearReserva({ idOrden: orden.id, items: await itemsDeReserva(items) });
+        } catch (err) {
+          // No dejar una orden PENDIENTE sin stock apartado: se pasa a CANCELADA
+          await actualizarEstadoOrden(orden.id, "CANCELADA")
+            .catch(() => cancelarOrden(orden.id))
+            .catch(() => {});
+          throw err;
+        }
         guardarCarrito(usuarioId, []);
       }
       navigate("/compras", {

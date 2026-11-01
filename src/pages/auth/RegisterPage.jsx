@@ -74,7 +74,7 @@ export default function RegisterPage() {
             value={form.password} onChange={handleChange} error={errors.password} />
           <Input label="Teléfono" name="telefono" type="tel" placeholder="+54 9 11 ...."
             value={form.telefono} onChange={handleChange} error={errors.telefono} />
-          <Input label="Dirección de envío" name="direccion"
+          <Input label="Dirección de envío" name="direccionEnvio"
             placeholder="Av. Corrientes 1234, CABA"
             value={form.direccionEnvio} onChange={handleChange} error={errors.direccionEnvio} />
           <RadioGroup label="Tipo de usuario" name="tipo" value={form.tipo}

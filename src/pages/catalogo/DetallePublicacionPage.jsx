@@ -19,10 +19,10 @@ const COLOR_RAREZA = {
   Común: "neutral",
 };
 
+// Solo estados que el back puede devolver en GET /publicaciones/{id} (ELIMINADA responde 404)
 const ESTADO_PUB = {
   PAUSADA: "Esta publicación está pausada.",
   VENDIDA: "Esta publicación ya fue vendida.",
-  CANCELADA: "Esta publicación fue cancelada.",
 };
 
 export default function DetallePublicacionPage() {

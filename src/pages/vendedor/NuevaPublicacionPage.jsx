@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 
 import Alert from "../../components/common/Alert";
 import Button from "../../components/common/Button";
 import Card from "../../components/common/Card";
+import FormOverlay from "../../components/common/FormOverlay";
 import Input from "../../components/common/Input";
 import Select from "../../components/common/Select";
 import Textarea from "../../components/common/Textarea";
 import Modal from "../../components/ui/Modal";
+import NuevoProductoPage from "./NuevoProductoPage";
 import {
   actualizarEstadoPublicacion,
+  actualizarPublicacion,
   crearPublicacion,
   obtenerProductos,
+  obtenerPublicacion,
 } from "../../services/catalogoService";
 import { getUserId } from "../../utils/session";
 import { ESTADOS_PUBLICACION, TIPOS_VENTA, formatearDinero } from "./opciones";
@@ -22,6 +26,10 @@ const itemVacio = { idProducto: "", precioUnitario: "", cantidadPublicada: "1" }
 export default function NuevaPublicacionPage() {
   const navigate = useNavigate();
   const idVendedor = getUserId();
+  const { id } = useParams(); // presente en /vendedor/publicaciones/:id/editar
+  const editando = Boolean(id);
+  const [estadoOriginal, setEstadoOriginal] = useState(null);
+  const [cargandoPub, setCargandoPub] = useState(editando);
 
   const [form, setForm] = useState({
     titulo: "",
@@ -40,12 +48,54 @@ export default function NuevaPublicacionPage() {
   const [nuevoItem, setNuevoItem] = useState(itemVacio);
   const [errorItem, setErrorItem] = useState("");
 
+  const [recarga, setRecarga] = useState(0);
+  const [productoNuevoOpen, setProductoNuevoOpen] = useState(false);
+
+  // Solo los productos del vendedor logueado (el filtro también se aplica en el cliente por seguridad)
   useEffect(() => {
     if (!idVendedor) return;
     obtenerProductos({ idVendedor, size: 100 })
-      .then((d) => setMisProductos(d?.content ?? []))
+      .then((d) =>
+        setMisProductos((d?.content ?? []).filter((p) => String(p.idVendedor) === String(idVendedor)))
+      )
       .catch(() => setApiError("No se pudieron cargar tus productos."));
-  }, [idVendedor]);
+  }, [idVendedor, recarga]);
+
+  // Modo edición: precargar la publicación
+  useEffect(() => {
+    if (!editando) return;
+    let cancelado = false;
+    obtenerPublicacion(id)
+      .then((pub) => {
+        if (cancelado) return;
+        if (String(pub.idVendedor) !== String(idVendedor)) {
+          setApiError("Esta publicación no te pertenece.");
+          return;
+        }
+        setEstadoOriginal(pub.estadoPublicacion);
+        setForm({
+          titulo: pub.titulo ?? "",
+          descripcion: pub.descripcion ?? "",
+          tipoVenta: pub.tipoVenta,
+          estadoPublicacion: pub.estadoPublicacion,
+        });
+        setItems(
+          (pub.detalles ?? []).map((d) => ({
+            producto: d.producto,
+            precioUnitario: Number(d.precioUnitario),
+            cantidadPublicada: d.cantidadPublicada,
+          }))
+        );
+      })
+      .catch((err) => !cancelado && setApiError(err.message))
+      .finally(() => !cancelado && setCargandoPub(false));
+    return () => {
+      cancelado = true;
+    };
+  }, [editando, id, idVendedor]);
+
+  // VENDIDA no admite cambios (el back responde 409)
+  const soloLectura = estadoOriginal === "VENDIDA";
 
   const handleChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
@@ -61,7 +111,9 @@ export default function NuevaPublicacionPage() {
     setNuevoItem({
       idProducto: e.target.value,
       precioUnitario: p?.precioReferencia ?? "",
-      cantidadPublicada: "1",
+      // Por defecto se publica todo el stock: la publicación pasa a VENDIDA cuando
+      // se venden todas las unidades PUBLICADAS, no las del producto
+      cantidadPublicada: String(Math.max(1, p?.stock ?? 1)),
     });
   };
 
@@ -104,24 +156,32 @@ export default function NuevaPublicacionPage() {
     setLoading(true);
     setApiError("");
     try {
-      const creada = await crearPublicacion({
-        idVendedor,
+      const datos = {
         titulo: form.titulo.trim(),
-        descripcion: form.descripcion.trim() || undefined,
+        descripcion: form.descripcion.trim() || (editando ? "" : undefined),
         tipoVenta: form.tipoVenta,
         detalles: items.map((i) => ({
           idProducto: i.producto.id,
           precioUnitario: i.precioUnitario,
           cantidadPublicada: i.cantidadPublicada,
         })),
-      });
+      };
 
-      // El DTO de creación no recibe estado: si eligió otro distinto de ACTIVA, se aplica aparte.
-      if (form.estadoPublicacion !== "ACTIVA" && creada?.estadoPublicacion !== form.estadoPublicacion) {
-        await actualizarEstadoPublicacion(creada.id, form.estadoPublicacion);
+      // PUT no recibe idVendedor ni estado; el estado va por PATCH /estado
+      const guardada = editando
+        ? await actualizarPublicacion(id, datos)
+        : await crearPublicacion({ idVendedor, ...datos });
+
+      if (guardada?.estadoPublicacion !== form.estadoPublicacion) {
+        await actualizarEstadoPublicacion(guardada.id, form.estadoPublicacion);
       }
 
-      navigate("/vendedor", { state: { tab: "publicaciones", mensaje: "Publicación creada correctamente." } });
+      navigate("/vendedor", {
+        state: {
+          tab: "publicaciones",
+          mensaje: editando ? "Publicación actualizada correctamente." : "Publicación creada correctamente.",
+        },
+      });
     } catch (err) {
       setApiError(err.message);
     } finally {
@@ -129,10 +189,22 @@ export default function NuevaPublicacionPage() {
     }
   };
 
+  if (cargandoPub) {
+    return <p className="py-12 text-center text-sm text-[#6B7280]">Cargando publicación...</p>;
+  }
+
   return (
     <div className="w-full">
       <Card padding="lg">
-        <h1 className="mb-5 text-lg font-bold text-[#1F2937]">Nueva Publicación</h1>
+        <h1 className="mb-5 text-lg font-bold text-[#1F2937]">
+          {editando ? "Editar Publicación" : "Nueva Publicación"}
+        </h1>
+
+        {soloLectura && (
+          <Alert variant="warning" className="mb-4">
+            Esta publicación está vendida y no admite modificaciones.
+          </Alert>
+        )}
 
         {apiError && (
           <Alert variant="danger" className="mb-4" onClose={() => setApiError("")}>
@@ -141,6 +213,7 @@ export default function NuevaPublicacionPage() {
         )}
 
         <form onSubmit={handleSubmit} noValidate className="space-y-5">
+          <fieldset disabled={soloLectura} className="space-y-5">
           <Input label="Título" name="titulo" value={form.titulo} onChange={handleChange}
             error={errors.titulo} required maxLength={255} />
 
@@ -148,7 +221,7 @@ export default function NuevaPublicacionPage() {
             onChange={handleChange} rows={5} />
 
           <div className="grid gap-5 sm:grid-cols-2">
-            <Select label="Tipo de venta" name="tipoVenta" value={form.tipoVenta}
+            <Select label="Tipo de precio" name="tipoVenta" value={form.tipoVenta}
               onChange={handleChange} options={TIPOS_VENTA} />
             <Select label="Estado" name="estadoPublicacion" value={form.estadoPublicacion}
               onChange={handleChange} options={ESTADOS_PUBLICACION} />
@@ -198,10 +271,11 @@ export default function NuevaPublicacionPage() {
             <Button variant="success" fullWidth onClick={() => setModalAbierto(true)}>
               + Agregar Producto
             </Button>
-            <Button type="submit" fullWidth loading={loading}>
-              Guardar Publicación con Productos
+            <Button type="submit" fullWidth loading={loading} disabled={soloLectura}>
+              {editando ? "Guardar cambios" : "Guardar Publicación"}
             </Button>
           </div>
+          </fieldset>
         </form>
       </Card>
 
@@ -210,9 +284,9 @@ export default function NuevaPublicacionPage() {
         {misProductos.length === 0 ? (
           <div className="space-y-3 text-sm text-[#4B5563]">
             <p>Todavía no tenés productos cargados.</p>
-            <Link to="/vendedor/productos/nuevo" className="font-semibold text-[#5146E5] underline">
-              Crear un producto
-            </Link>
+            <Button fullWidth onClick={() => { cerrarModal(); setProductoNuevoOpen(true); }}>
+              + Nuevo Producto
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
@@ -233,9 +307,15 @@ export default function NuevaPublicacionPage() {
                 onChange={(e) => setNuevoItem((n) => ({ ...n, precioUnitario: e.target.value }))} />
               <Input label="Cantidad" name="cantidadPublicada" type="number" min="1"
                 max={productoSeleccionado?.stock ?? undefined}
+                helperText={productoSeleccionado ? `Unidades a la venta (stock: ${productoSeleccionado.stock ?? 0})` : undefined}
                 value={nuevoItem.cantidadPublicada}
                 onChange={(e) => setNuevoItem((n) => ({ ...n, cantidadPublicada: e.target.value }))} />
             </div>
+
+            <Button variant="outlineSuccess" fullWidth
+              onClick={() => { cerrarModal(); setProductoNuevoOpen(true); }}>
+              + Nuevo Producto (alta rápida)
+            </Button>
 
             <div className="flex gap-3 pt-1">
               <Button variant="outline" fullWidth onClick={cerrarModal}>Cancelar</Button>
@@ -244,6 +324,20 @@ export default function NuevaPublicacionPage() {
           </div>
         )}
       </Modal>
+
+      {/* ALTA RÁPIDA DE PRODUCTO: mismo overlay y ancho que el alta desde el panel */}
+      {productoNuevoOpen && (
+        <FormOverlay onClose={() => setProductoNuevoOpen(false)} maxWidth="max-w-2xl">
+          <NuevoProductoPage
+            onCancel={() => setProductoNuevoOpen(false)}
+            onCreated={() => {
+              setProductoNuevoOpen(false);
+              setRecarga((n) => n + 1);
+              setModalAbierto(true);
+            }}
+          />
+        </FormOverlay>
+      )}
     </div>
   );
 }

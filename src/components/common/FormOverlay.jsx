@@ -5,15 +5,22 @@ import { X } from "lucide-react";
  * Capa oscura semitransparente con el formulario centrado encima.
  * Se cierra con la X, haciendo clic en el fondo o con Esc.
  */
+// Overlays abiertos (el último es el de arriba): Esc solo cierra el superior
+const abiertos = [];
+
 export default function FormOverlay({ onClose, children, maxWidth = "max-w-3xl" }) {
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose?.();
+    const token = {};
+    abiertos.push(token);
+    const onKey = (e) =>
+      e.key === "Escape" && abiertos[abiertos.length - 1] === token && onClose?.();
     document.addEventListener("keydown", onKey);
 
     const previo = document.body.style.overflow;
     document.body.style.overflow = "hidden"; // evita scroll del fondo
 
     return () => {
+      abiertos.splice(abiertos.indexOf(token), 1);
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previo;
     };

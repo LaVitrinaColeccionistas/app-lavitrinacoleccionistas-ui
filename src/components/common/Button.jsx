@@ -48,6 +48,27 @@ const variants = {
     focus:ring-[#FECACA]
   `,
 
+  info: `
+    bg-[#0284C7] text-white
+    hover:bg-[#0369A1]
+    shadow-sm hover:shadow-md
+    focus:ring-[#BAE6FD]
+  `,
+
+  outlineWarning: `
+    border border-[#F59E0B]
+    bg-white text-[#B45309]
+    hover:bg-[#FFFBEB]
+    focus:ring-[#FDE68A]
+  `,
+
+  outlineInfo: `
+    border border-[#0EA5E9]
+    bg-white text-[#0369A1]
+    hover:bg-[#F0F9FF]
+    focus:ring-[#BAE6FD]
+  `,
+
   ghost: `
     bg-transparent text-[#5146E5]
     hover:bg-[#F5F3FF]

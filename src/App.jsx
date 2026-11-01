@@ -124,6 +124,16 @@ export default function App() {
       />
 
       <Route
+        path="/vendedor/publicaciones/:id/editar"
+        element={protegida(
+          <FormularioVendedor>
+            <NuevaPublicacionPage />
+          </FormularioVendedor>,
+          vendedor
+        )}
+      />
+
+      <Route
         path="/vendedor/productos/nuevo"
         element={protegida(
           <FormularioVendedor>

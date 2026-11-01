@@ -6,7 +6,7 @@ import Button from "../../components/common/Button";
 import Card from "../../components/common/Card";
 import Input from "../../components/common/Input";
 import Select from "../../components/common/Select";
-import { crearProducto } from "../../services/catalogoService";
+import { actualizarProducto, crearProducto } from "../../services/catalogoService";
 import { getUserId } from "../../utils/session";
 import { CATEGORIAS, ESTADOS_CONSERVACION, RAREZAS } from "./opciones";
 
@@ -35,11 +35,24 @@ function validar(f) {
   return e;
 }
 
-export default function NuevoProductoPage({ onCancel, onCreated }) {
+// Convierte un ProductoDTO a los valores del formulario (inputs trabajan con strings)
+const desdeProducto = (p) => ({
+  nombre: p.nombre ?? "",
+  categoria: p.categoria ?? CATEGORIAS[0].value,
+  estadoConservacion: p.estadoConservacion ?? ESTADOS_CONSERVACION[0].value,
+  rareza: p.rareza ?? RAREZAS[0].value,
+  stock: String(p.stock ?? 0),
+  precioReferencia: String(p.precioReferencia ?? ""),
+  urlImagen: p.urlImagen ?? "",
+});
+
+// Sin `producto` = alta. Con `producto` (ProductoDTO) = edición vía PUT /api/productos/{id}
+export default function NuevoProductoPage({ producto, onCancel, onCreated }) {
   const navigate = useNavigate();
   const idVendedor = getUserId();
+  const editando = Boolean(producto?.id);
 
-  const [form, setForm] = useState(inicial);
+  const [form, setForm] = useState(() => (editando ? desdeProducto(producto) : inicial));
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,18 +73,24 @@ export default function NuevoProductoPage({ onCancel, onCreated }) {
     setLoading(true);
     setApiError("");
     try {
-      await crearProducto({
-        idVendedor,
+      const datos = {
         nombre: form.nombre.trim(),
         categoria: form.categoria,
         estadoConservacion: form.estadoConservacion,
         rareza: form.rareza,
         stock: Number(form.stock),
         precioReferencia: Number(form.precioReferencia),
-        urlImagen: form.urlImagen.trim() || undefined,
-      });
-      if (onCreated) onCreated();
-      else navigate("/vendedor", { state: { tab: "productos", mensaje: "Producto creado correctamente." } });
+        // En edición se manda "" para poder borrar la imagen (el mapper ignora null)
+        urlImagen: form.urlImagen.trim() || (editando ? "" : undefined),
+      };
+      // ProductoUpdateDTO no lleva idVendedor
+      const guardado = editando
+        ? await actualizarProducto(producto.id, datos)
+        : await crearProducto({ idVendedor, ...datos });
+
+      const texto = editando ? "Producto actualizado correctamente." : "Producto creado correctamente.";
+      if (onCreated) onCreated(guardado, texto);
+      else navigate("/vendedor", { state: { tab: "productos", mensaje: texto } });
     } catch (err) {
       setApiError(err.message);
     } finally {
@@ -82,7 +101,9 @@ export default function NuevoProductoPage({ onCancel, onCreated }) {
   return (
     <div className="w-full">
       <Card padding="lg">
-        <h1 className="mb-5 text-lg font-bold text-[#1F2937]">Nuevo Producto</h1>
+        <h1 className="mb-5 text-lg font-bold text-[#1F2937]">
+          {editando ? "Editar Producto" : "Nuevo Producto"}
+        </h1>
 
         {apiError && (
           <Alert variant="danger" className="mb-4" onClose={() => setApiError("")}>
@@ -118,7 +139,7 @@ export default function NuevoProductoPage({ onCancel, onCreated }) {
               Cancelar
             </Button>
             <Button type="submit" fullWidth loading={loading}>
-              Guardar Producto
+              {editando ? "Guardar cambios" : "Guardar Producto"}
             </Button>
           </div>
         </form>
