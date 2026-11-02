@@ -15,7 +15,14 @@ import ConfirmDeleteModal from "../../components/common/ConfirmDeleteModal";
 import { useAuth } from "../../context/AuthContext";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
 import { obtenerNombresUsuarios } from "../../services/authService";
-import { obtenerProducto } from "../../services/catalogoService";
+import {
+  ORIGEN_RESERVA,
+  confirmarReserva,
+  liberarReserva,
+  obtenerProducto,
+  obtenerPublicacion,
+  reservarStock,
+} from "../../services/catalogoService";
 
 import {
   obtenerIntercambios,
@@ -56,6 +63,55 @@ function formatearDinero(valor) {
     currency: "PYG",
     maximumFractionDigits: 0,
   }).format(Number(valor ?? 0));
+}
+
+/*
+ * Sincroniza el stock en catálogo ANTES de cambiar el estado del intercambio.
+ * Si catálogo responde error, el estado no cambia. Todas las llamadas son idempotentes:
+ * si después falla el PATCH, reintentar no duplica nada.
+ *  - PROPUESTO  -> lo OFRECIDO ya quedó reservado al proponer.
+ *  - ACEPTADO   -> se reserva lo SOLICITADO (unidades de la publicación del receptor).
+ *  - RECHAZADO / CANCELADO -> se libera todo.
+ *  - COMPLETADO -> se confirma: descuenta stock y crea los productos para cada destinatario.
+ */
+async function sincronizarStock(intercambio, nuevoEstado) {
+  const id = intercambio.id;
+
+  if (nuevoEstado === "ACEPTADO") {
+    const solicitados = (intercambio.detalles ?? []).filter(
+      (d) => d.tipoMovimiento === "SOLICITADO"
+    );
+    if (!solicitados.length) return;
+
+    const publicacion = intercambio.idPublicacion
+      ? await obtenerPublicacion(intercambio.idPublicacion)
+      : null;
+
+    const items = solicitados.map((d) => {
+      const detalle = publicacion?.detalles?.find(
+        (det) => String(det.producto?.id) === String(d.idProducto)
+      );
+      return {
+        ...(detalle
+          ? { idDetallePublicacion: detalle.id }
+          : { idProducto: d.idProducto }),
+        cantidad: Number(d.cantidad),
+        idUsuarioDestino: intercambio.idUsuarioProponente,
+      };
+    });
+
+    await reservarStock(ORIGEN_RESERVA.INTERCAMBIO, id, items);
+    return;
+  }
+
+  if (nuevoEstado === "RECHAZADO" || nuevoEstado === "CANCELADO") {
+    await liberarReserva(ORIGEN_RESERVA.INTERCAMBIO, id);
+    return;
+  }
+
+  if (nuevoEstado === "COMPLETADO") {
+    await confirmarReserva(ORIGEN_RESERVA.INTERCAMBIO, id);
+  }
 }
 
 export default function IntercambiosPage() {
@@ -275,6 +331,8 @@ export default function IntercambiosPage() {
       setError("");
       setMensaje("");
 
+      await sincronizarStock(seleccionado, nuevoEstado);
+
       const actualizado = await cambiarEstadoIntercambio(
         seleccionado.id,
         nuevoEstado
@@ -301,7 +359,13 @@ export default function IntercambiosPage() {
       );
     } catch (err) {
       console.error(err);
-      setError("No fue posible actualizar el estado del intercambio.");
+      setError(
+        err?.status === 404 && nuevoEstado === "COMPLETADO"
+          ? "Este intercambio no tiene stock reservado (es anterior al sistema de reservas). Cancelalo y volvé a proponerlo."
+          : [400, 403, 409].includes(err?.status)
+            ? err.message
+            : "No fue posible actualizar el estado del intercambio."
+      );
     } finally {
       setActualizandoEstado(false);
     }

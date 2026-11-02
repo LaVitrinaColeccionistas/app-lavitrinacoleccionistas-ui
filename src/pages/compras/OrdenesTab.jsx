@@ -13,6 +13,7 @@ import Select from "../../components/common/Select";
 import Table from "../../components/common/Table";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
 import { obtenerNombresUsuarios } from "../../services/authService";
+import { ORIGEN_RESERVA, liberarReserva } from "../../services/catalogoService";
 import {
   actualizarEstadoOrden,
   cancelarOrden,
@@ -255,7 +256,13 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
         onClose={() => setACancelar(null)}
         elemento="esta compra (quedará cancelada)"
         loading={procesando}
-        onConfirm={() => ejecutar(() => cancelarOrden(aCancelar.id), "La compra fue cancelada.")}
+        onConfirm={() =>
+          ejecutar(async () => {
+            // Primero se libera el stock apartado; si la orden ya se confirmó, el backend responde 409
+            await liberarReserva(ORIGEN_RESERVA.ORDEN, aCancelar.id);
+            await cancelarOrden(aCancelar.id);
+          }, "La compra fue cancelada.")
+        }
       />
     </>
   );

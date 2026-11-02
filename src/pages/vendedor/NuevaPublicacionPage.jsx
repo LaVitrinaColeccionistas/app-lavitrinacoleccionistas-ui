@@ -237,7 +237,7 @@ export default function NuevaPublicacionPage() {
             {items.length === 0 ? (
               <div className={`rounded-lg border border-dashed bg-[#FAFAFC] py-4 text-center text-sm text-[#6B7280]
                 ${errors.items ? "border-[#EF4444]" : "border-[#D1D5DB]"}`}>
-                Todavía no agregados
+                Todavía no agregaste productos
               </div>
             ) : (
               <ul className="space-y-2">

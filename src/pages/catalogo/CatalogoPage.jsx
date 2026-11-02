@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { obtenerPublicaciones } from "../../services/catalogoService";
 import { agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
+import { precioPrincipal } from "../../utils/precios";
 const TAMANO_PAGINA = 9;
 
 const formatearPrecio = (valor) =>
@@ -20,13 +21,10 @@ function publicacionACard(pub) {
   const primero = detalles[0];
   const producto = primero?.producto ?? primero ?? {};
 
-  const precios = detalles
-    .map((d) => Number(d.precioUnitario))
-    .filter((n) => !Number.isNaN(n));
-
+  // Un producto: su precio. Lote por oferta: valor total. Varios a precio fijo: "Desde".
+  const { valor, etiqueta } = precioPrincipal(pub);
   let precio = "-";
-  if (precios.length === 1) precio = precios[0];
-  else if (precios.length > 1) precio = `Desde ${formatearPrecio(Math.min(...precios))}`;
+  if (valor != null) precio = etiqueta ? `${etiqueta} ${formatearPrecio(valor)}` : valor;
 
   return {
     id: pub.id,

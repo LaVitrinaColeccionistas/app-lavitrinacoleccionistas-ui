@@ -10,6 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import { obtenerPublicacion } from "../../services/catalogoService";
 import { agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
 import { formatearDinero } from "../vendedor/opciones";
+import { esOfertable, precioPrincipal, precioTotal } from "../../utils/precios";
 import useNombres from "../../hooks/useNombres";
 
 const COLOR_RAREZA = {
@@ -76,18 +77,23 @@ export default function DetallePublicacionPage() {
     [detalles]
   );
 
-  const precios = detalles
-    .map((d) => Number(d.precioUnitario))
-    .filter((n) => !Number.isNaN(n));
-  const precio = precios.length
-    ? `${precios.length > 1 ? "Desde " : ""}${formatearDinero(Math.min(...precios))}`
-    : "-";
+  const { valor: valorPrincipal, etiqueta: etiquetaPrecio } = precioPrincipal(pub);
+  const precio = valorPrincipal != null ? formatearDinero(valorPrincipal) : "-";
+  const total = precioTotal(pub);
+  const esLote = pub?.tipoVenta === "OFERTA_LIBRE" && detalles.length > 1;
+  // Un solo producto con varias unidades publicadas: aclarar que el precio es por unidad
+  const esPorUnidad = detalles.length === 1 && Number(detalles[0]?.cantidadPublicada ?? 0) > 1;
+  const ofertable = esOfertable(pub);
 
-  const stock = detalles.reduce((s, d) => s + (d.cantidadPublicada ?? 0), 0);
+  // Unidades que se pueden comprar ahora: lo publicado menos lo reservado por otras operaciones
+  const stock = detalles.reduce((s, d) => s + (d.cantidadDisponible ?? d.cantidadPublicada ?? 0), 0);
 
   const esPropia = Boolean(pub) && pub.idVendedor === usuarioId;
   const activa = pub?.estadoPublicacion === "ACTIVA";
-  const puedeActuar = activa && !esPropia;
+  // Sin unidades libres (todo reservado) no se puede comprar, ofertar ni intercambiar
+  const puedeActuar = activa && !esPropia && stock > 0;
+  // Una oferta reserva el lote completo: con alguna unidad reservada no se podría aceptar
+  const puedeOfertar = activa && !esPropia && ofertable;
 
   // Las rutas destino son protegidas. Si no hay sesión, se vuelve a este detalle tras el login
   // (ProtectedRoute no conserva location.state, por eso no se delega en él).
@@ -222,16 +228,47 @@ export default function DetallePublicacionPage() {
           </div>
 
           <h1 className="text-3xl font-bold leading-tight text-[#1F2937]">{pub.titulo}</h1>
-          <p className="mt-3 text-3xl font-bold text-[#5146E5]">{precio}</p>
+          <div className="mt-3">
+            {etiquetaPrecio && (
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+                {etiquetaPrecio === "Lote" ? "Valor de referencia del lote" : "Desde"}
+              </p>
+            )}
+            <p className="text-3xl font-bold text-[#5146E5]">{precio}</p>
+            {esPorUnidad && (
+              <p className="mt-1 text-sm text-[#6B7280]">por unidad</p>
+            )}
+          </div>
 
           {detalles.length > 1 && (
-            <ul className="mt-3 space-y-1 text-sm text-[#6B7280]">
-              {detalles.map((d) => (
-                <li key={d.id}>
-                  {d.cantidadPublicada} × {d.producto?.nombre} — {formatearDinero(d.precioUnitario)}
-                </li>
-              ))}
-            </ul>
+            <div className="mt-4 rounded-lg border border-[#E5E7EB]">
+              <ul className="divide-y divide-[#E5E7EB] text-sm">
+                {detalles.map((d) => (
+                  <li key={d.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                    <span className="min-w-0 truncate text-[#374151]">
+                      {d.producto?.nombre}
+                      <span className="text-[#9CA3AF]">
+                        {" · "}
+                        {esLote
+                          ? `${d.cantidadPublicada} u.`
+                          : `Disponible: ${d.cantidadDisponible ?? d.cantidadPublicada}`}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-medium text-[#1F2937]">
+                      {formatearDinero(d.precioUnitario)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {total != null && (
+                <div className="flex justify-between border-t border-[#E5E7EB] bg-[#FAFAFC] px-3 py-2 text-sm">
+                  <span className="font-semibold text-[#374151]">
+                    {esLote ? "Total del lote" : "Total si comprás todo"}
+                  </span>
+                  <strong className="text-[#1F2937]">{formatearDinero(total)}</strong>
+                </div>
+              )}
+            </div>
           )}
 
           <hr className="my-6 border-[#E5E7EB]" />
@@ -302,11 +339,17 @@ export default function DetallePublicacionPage() {
               variant="outline"
               size="lg"
               fullWidth
-              disabled={!puedeActuar}
+              disabled={!puedeOfertar}
               onClick={hacerOferta}
             >
-              Hacer una oferta monetaria
+              {pub?.tipoVenta === "OFERTA_LIBRE" ? "Ofertar en subasta" : "Hacer una oferta monetaria"}
             </Button>
+            {activa && !esPropia && !ofertable && (
+              <p className="-mt-1 text-xs text-[#6B7280]">
+                No se puede ofertar ahora: hay unidades reservadas por otra operación y la
+                oferta es por el lote completo.
+              </p>
+            )}
 
             <Button
               variant="outlineSuccess"

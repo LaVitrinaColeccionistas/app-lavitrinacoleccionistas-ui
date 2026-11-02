@@ -48,7 +48,7 @@ export function entradasDePublicacion(publicacion) {
       idPublicacion: publicacion.id,
       idProducto: d.producto?.id ?? d.idProducto,
       cantidad: 1,
-      disponible: d.cantidadPublicada ?? null,
+      disponible: d.cantidadDisponible ?? d.cantidadPublicada ?? null,
     }))
     .filter((e) => e.idProducto != null);
 }

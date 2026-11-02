@@ -1,21 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import Alert from "../../components/common/Alert";
 import Badge from "../../components/common/Badge";
 import Button from "../../components/common/Button";
 import Card from "../../components/common/Card";
+import ConfirmActionModal from "../../components/common/ConfirmActionModal";
 import Input from "../../components/common/Input";
 import Pagination from "../../components/common/Pagination";
+import Select from "../../components/common/Select";
 import Table from "../../components/common/Table";
 import Textarea from "../../components/common/Textarea";
 import { useAuth } from "../../context/AuthContext";
 import useNombres from "../../hooks/useNombres";
 import {
+  ORIGEN_RESERVA,
   crearOferta,
   obtenerOfertas,
   obtenerPublicacion,
+  obtenerReservas,
+  reasignarReserva,
 } from "../../services/catalogoService";
+import { actualizarEstadoOrden, cancelarOrden, crearOrden } from "../../services/comprasService";
+import { METODOS_PAGO } from "../compras/opciones";
+import { esOfertable, porcentajeDe, precioTotal, unidadesDelLote } from "../../utils/precios";
 import {
   formatearDinero,
   formatearFecha,
@@ -35,19 +43,6 @@ const filtrosVacios = { precioMin: "", precioMax: "", fechaMin: "", fechaMax: ""
 
 const soloDigitos = (v) => v.replace(/\D/g, "");
 const dia = (f) => (f ? String(f).slice(0, 10) : "");
-
-function precioActual(pub) {
-  const precios = (pub?.detalles ?? [])
-    .map((d) => Number(d.precioUnitario))
-    .filter((n) => !Number.isNaN(n));
-
-  if (!precios.length) return null;
-
-  const min = Math.min(...precios);
-  return precios.length > 1
-    ? `Desde ${formatearDinero(min)}`
-    : formatearDinero(min);
-}
 
 function Miniatura({ src }) {
   return src ? (
@@ -78,6 +73,12 @@ export default function OfertasPage() {
   const [pagina, setPagina] = useState(0);
 
   const nombreDe = useNombres(ofertas.map((o) => o.idVendedor));
+
+  // Pago de una oferta aceptada
+  const navigate = useNavigate();
+  const [aPagar, setAPagar] = useState(null);
+  const [metodoPago, setMetodoPago] = useState(METODOS_PAGO[0].value);
+  const [pagando, setPagando] = useState(false);
 
   useEffect(() => {
     if (!idPublicacion) return undefined;
@@ -124,6 +125,7 @@ export default function OfertasPage() {
             idVendedor: porId[o.idPublicacion]?.idVendedor,
             titulo: porId[o.idPublicacion]?.titulo ?? `Publicación #${o.idPublicacion}`,
             imagen: imagenDePublicacion(porId[o.idPublicacion]),
+            valorLote: precioTotal(porId[o.idPublicacion]),
           }))
           .sort((a, b) => new Date(b.fechaOferta) - new Date(a.fechaOferta))
       );
@@ -177,6 +179,11 @@ export default function OfertasPage() {
     if (pubVisible.idVendedor === usuarioId) {
       return setErrorForm("No podés ofertar en tu propia publicación.");
     }
+    if (!esOfertable(pubVisible)) {
+      return setErrorForm(
+        "Esta publicación tiene unidades reservadas. La oferta es por el lote completo, probá más tarde."
+      );
+    }
 
     const valor = Number(monto);
     if (!valor || valor <= 0) {
@@ -206,15 +213,67 @@ export default function OfertasPage() {
     }
   };
 
+  /*
+   * Oferta aceptada -> orden de compra. Las unidades ya están reservadas para vos desde que el
+   * vendedor aceptó: se crea la orden con esas cantidades y la reserva pasa a ser de la orden.
+   * Si la reserva venció, la orden recién creada se cancela.
+   */
+  const pagarOferta = async () => {
+    if (!aPagar) return;
+    try {
+      setPagando(true);
+      setErrorLista("");
+
+      const reservas = (await obtenerReservas(ORIGEN_RESERVA.OFERTA, aPagar.id))
+        .filter((r) => r.estadoReserva === "RESERVADA");
+      if (!reservas.length) {
+        throw Object.assign(new Error("La reserva de esta oferta venció."), { status: 409 });
+      }
+
+      const orden = await crearOrden({
+        idComprador: usuarioId,
+        metodoPago,
+        detalles: reservas.map((r) => ({
+          idProducto: r.idProducto,
+          idPublicacion: aPagar.idPublicacion,
+          cantidad: r.cantidad,
+        })),
+      });
+
+      try {
+        await reasignarReserva(ORIGEN_RESERVA.OFERTA, aPagar.id, ORIGEN_RESERVA.ORDEN, orden.id);
+      } catch (err) {
+        await actualizarEstadoOrden(orden.id, "CANCELADA")
+          .catch(() => cancelarOrden(orden.id))
+          .catch(() => {});
+        throw err;
+      }
+
+      setAPagar(null);
+      navigate("/compras", { state: { mensaje: "Compra registrada a partir de tu oferta." } });
+    } catch (err) {
+      console.error(err);
+      setAPagar(null);
+      setErrorLista(err.message || "No fue posible registrar la compra.");
+      await cargarOfertas();
+    } finally {
+      setPagando(false);
+    }
+  };
+
   const columnas = [
     { key: "articulo", label: "Artículo" },
     { key: "vendedor", label: "Vendedor" },
     { key: "oferta", label: "Tu Oferta" },
     { key: "estado", label: "Estado" },
     { key: "fecha", label: "Fecha" },
+    { key: "accion", label: "" },
   ];
 
-  const precio = precioActual(pubVisible);
+  // La oferta es por el lote completo: se compara contra su valor total
+  const valorLote = precioTotal(pubVisible);
+  const porcentaje = porcentajeDe(monto, valorLote);
+  const unidades = unidadesDelLote(pubVisible);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -242,8 +301,11 @@ export default function OfertasPage() {
                 <p className="truncate text-sm font-bold text-[#1F2937]">
                   {pubVisible.titulo}
                 </p>
-                {precio && (
-                  <p className="text-xs text-[#6B7280]">Precio actual: {precio}</p>
+                {valorLote != null && (
+                  <p className="text-xs text-[#6B7280]">
+                    Valor de referencia del lote: {formatearDinero(valorLote)}
+                    {unidades > 1 && ` (${unidades} unidades)`}
+                  </p>
                 )}
               </div>
             </div>
@@ -267,6 +329,17 @@ export default function OfertasPage() {
               onChange={(e) => setMonto(soloDigitos(e.target.value))}
               disabled={!pubVisible}
             />
+            {porcentaje != null && (
+              <p
+                className={`-mt-2 text-xs ${
+                  porcentaje < 50 ? "text-[#B45309]" : "text-[#6B7280]"
+                }`}
+              >
+                Tu oferta: {formatearDinero(Number(monto))} ({porcentaje} % del valor del lote)
+                {porcentaje < 50 && " · Es una oferta baja, es probable que el vendedor la rechace."}
+                {porcentaje > 100 && " · Supera el valor de referencia."}
+              </p>
+            )}
 
             <Textarea
               label="Mensaje Opcional para el vendedor"
@@ -339,8 +412,13 @@ export default function OfertasPage() {
                   <td className="px-4 py-4 text-[#4B5563]">
                     {o.idVendedor != null ? nombreDe(o.idVendedor, `Vendedor #${o.idVendedor}`) : "-"}
                   </td>
-                  <td className="px-4 py-4 font-bold text-[#1F2937]">
-                    {formatearDinero(o.montoOfertado)}
+                  <td className="px-4 py-4">
+                    <span className="font-bold text-[#1F2937]">{formatearDinero(o.montoOfertado)}</span>
+                    {porcentajeDe(o.montoOfertado, o.valorLote) != null && (
+                      <span className="block text-xs text-[#6B7280]">
+                        {porcentajeDe(o.montoOfertado, o.valorLote)} % de {formatearDinero(o.valorLote)}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-4">
                     <Badge variant={ESTADOS[o.estadoOferta]?.variant ?? "neutral"}>
@@ -349,6 +427,13 @@ export default function OfertasPage() {
                   </td>
                   <td className="px-4 py-4 text-[#6B7280]">
                     {formatearFecha(o.fechaOferta)}
+                  </td>
+                  <td className="px-4 py-4 text-right">
+                    {o.estadoOferta === "ACEPTADA" && (
+                      <Button size="sm" variant="success" onClick={() => setAPagar(o)}>
+                        Pagar
+                      </Button>
+                    )}
                   </td>
                 </>
               )}
@@ -364,6 +449,28 @@ export default function OfertasPage() {
           </div>
         </Card>
       </div>
+      <ConfirmActionModal
+        isOpen={Boolean(aPagar)}
+        onClose={() => !pagando && setAPagar(null)}
+        onConfirm={pagarOferta}
+        title="Pagar oferta aceptada"
+        confirmLabel="Registrar compra"
+        confirmVariant="success"
+        loading={pagando}
+        message={
+          aPagar
+            ? `Vas a comprar "${aPagar.titulo}" por ${formatearDinero(aPagar.montoOfertado)}. Las unidades están reservadas para vos hasta que venza la oferta.`
+            : ""
+        }
+      >
+        <Select
+          label="Método de pago"
+          name="metodoPago"
+          value={metodoPago}
+          onChange={(e) => setMetodoPago(e.target.value)}
+          options={METODOS_PAGO}
+        />
+      </ConfirmActionModal>
     </div>
   );
 }

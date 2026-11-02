@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { ArrowLeftRight, Trash2 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -11,10 +10,12 @@ import MultiSelect from "../../components/common/MultiSelect";
 import NuevoProductoPage from "../vendedor/NuevoProductoPage";
 
 import {
+  ORIGEN_RESERVA,
+  reservarStock,
   obtenerPublicacion,
   obtenerProductos,
 } from "../../services/catalogoService";
-import { crearIntercambio } from "../../services/intercambiosService";
+import { cambiarEstadoIntercambio, crearIntercambio } from "../../services/intercambiosService";
 
 function dinero(valor) {
   if (valor == null) return "Sin precio";
@@ -106,7 +107,30 @@ export default function ProponerIntercambioPage({ usuarioId }) {
     };
   }, [usuarioId, pagina, busqueda, recargaProductos]);
 
-  const solicitados = publicacion?.detalles ?? [];
+  // Lo que se pide de la publicación: cantidad editable (hasta lo disponible) y se puede quitar.
+  // Disponible = publicado - reservado por órdenes, ofertas u otros intercambios.
+  const [cantidadesSolicitadas, setCantidadesSolicitadas] = useState({});
+  const [excluidos, setExcluidos] = useState([]);
+
+  const detallesPublicacion = publicacion?.detalles ?? [];
+  const disponibleDe = (detalle) =>
+    Math.max(0, Number(detalle.cantidadDisponible ?? detalle.cantidadPublicada ?? 0));
+
+  const solicitados = detallesPublicacion
+    .filter((detalle) => disponibleDe(detalle) > 0 && !excluidos.includes(detalle.id))
+    .map((detalle) => ({
+      ...detalle,
+      cantidad: cantidadesSolicitadas[detalle.id] ?? disponibleDe(detalle),
+    }));
+  const agotados = detallesPublicacion.filter((detalle) => disponibleDe(detalle) === 0);
+
+  function cambiarCantidadSolicitada(idDetalle, cantidad) {
+    setCantidadesSolicitadas((actuales) => ({ ...actuales, [idDetalle]: cantidad }));
+  }
+
+  function quitarSolicitado(idDetalle) {
+    setExcluidos((actuales) => [...actuales, idDetalle]);
+  }
 
   function cambiarBusqueda(valor) {
     setBuscando(true);
@@ -153,16 +177,25 @@ export default function ProponerIntercambioPage({ usuarioId }) {
       return;
     }
 
+    if (solicitados.length === 0) {
+      setError(
+        agotados.length === detallesPublicacion.length
+          ? "La publicación no tiene unidades disponibles en este momento."
+          : "Seleccioná al menos un producto de la publicación."
+      );
+      return;
+    }
+
     if (
-      solicitados.length === 0 ||
       solicitados.some(
         (detalle) =>
           !detalle.producto?.id ||
-          !Number.isInteger(Number(detalle.cantidadPublicada)) ||
-          Number(detalle.cantidadPublicada) < 1
+          !Number.isInteger(Number(detalle.cantidad)) ||
+          Number(detalle.cantidad) < 1 ||
+          Number(detalle.cantidad) > disponibleDe(detalle)
       )
     ) {
-      setError("La publicación no contiene productos válidos.");
+      setError("Revisá las cantidades solicitadas: no pueden superar lo disponible.");
       return;
     }
 
@@ -205,7 +238,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
       detalles: [
         ...solicitados.map((detalle) => ({
           idProducto: Number(detalle.producto.id),
-          cantidad: Number(detalle.cantidadPublicada),
+          cantidad: Number(detalle.cantidad),
           tipoMovimiento: "SOLICITADO",
         })),
         ...ofrecidos.map((producto) => ({
@@ -218,11 +251,33 @@ export default function ProponerIntercambioPage({ usuarioId }) {
 
     try {
       setGuardando(true);
-      await crearIntercambio(datos);
+      const creado = await crearIntercambio(datos);
+
+      // Aparta lo que ofrezco para que no lo venda mientras el receptor responde.
+      // Si no hay stock libre, la propuesta se cancela para no dejarla sin respaldo.
+      try {
+        await reservarStock(
+          ORIGEN_RESERVA.INTERCAMBIO,
+          creado.id,
+          ofrecidos.map((producto) => ({
+            idProducto: Number(producto.id),
+            cantidad: Number(producto.cantidad),
+            idUsuarioDestino: Number(publicacion.idVendedor),
+          }))
+        );
+      } catch (err) {
+        await cambiarEstadoIntercambio(creado.id, "CANCELADO").catch(() => {});
+        throw err;
+      }
+
       navigate("/intercambios");
     } catch (err) {
       console.error(err);
-      setError("No fue posible crear la propuesta.");
+      setError(
+        err?.status === 409 || err?.status === 400 || err?.status === 403
+          ? err.message
+          : "No fue posible crear la propuesta."
+      );
     } finally {
       setGuardando(false);
     }
@@ -274,63 +329,110 @@ export default function ProponerIntercambioPage({ usuarioId }) {
           title="Productos solicitados"
           subtitle={publicacion?.titulo ?? "Productos de la publicación"}
         >
-          {solicitados.length ? (
-            <div className="divide-y divide-[#E5E7EB]">
-              {solicitados.map((detalle, index) => (
-                <div
-                  key={detalle.id ?? index}
-                  className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
-                >
-                  {detalle.producto?.urlImagen ? (
-                    <img
-                      src={detalle.producto.urlImagen}
-                      alt={detalle.producto.nombre}
-                      className="h-12 w-12 shrink-0 rounded-md object-cover"
-                    />
-                  ) : (
-                    <div className="h-12 w-12 shrink-0 rounded-md bg-[#F3F4F6]" />
-                  )}
-
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-[#1F2937]">
-                      {detalle.producto?.nombre ?? "Producto"}
-                    </p>
-                    <p className="text-xs text-[#6B7280]">
-                      Cantidad: {detalle.cantidadPublicada}
-                    </p>
-                  </div>
-
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-semibold text-[#1F2937]">
-                      {dinero(detalle.precioUnitario)}
-                    </p>
-                    <p className="text-xs text-[#9CA3AF]">
-                      Precio unitario
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
+          {detallesPublicacion.length === 0 ? (
             <p className="text-sm text-[#6B7280]">
               No hay productos en esta publicación.
             </p>
-          )}
-          {solicitados.length > 0 && (
-            <div className="mt-4 flex justify-between gap-4 border-t border-[#E5E7EB] pt-4 text-sm">
-              <span className="font-semibold text-[#374151]">Total de la publicación</span>
-              <strong className="text-[#1F2937]">
-                {solicitados.some((detalle) => detalle.precioUnitario == null)
-                  ? "No disponible"
-                  : dinero(
-                      solicitados.reduce(
-                        (total, detalle) =>
-                          total + Number(detalle.precioUnitario) * Number(detalle.cantidadPublicada ?? 0),
-                        0
-                      )
-                    )}
-              </strong>
-            </div>
+          ) : (
+            <>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-[#374151]">
+                  Productos seleccionados ({solicitados.length})
+                </h3>
+                {excluidos.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExcluidos([])}
+                    className="text-xs font-medium text-[#4F46E5] hover:underline"
+                  >
+                    Restablecer
+                  </button>
+                )}
+              </div>
+
+              {solicitados.length > 0 ? (
+                <div className="divide-y divide-[#E5E7EB] rounded-lg border border-[#E5E7EB] px-3">
+                  {solicitados.map((detalle) => (
+                    <div
+                      key={detalle.id}
+                      className="flex flex-wrap items-center gap-3 py-2.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-[#1F2937]">
+                          {detalle.producto?.nombre ?? "Producto"}
+                        </p>
+                        <p className="text-xs text-[#6B7280]">
+                          {dinero(detalle.precioUnitario)}
+                          {" · "}
+                          Disponible: {disponibleDe(detalle)}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <label
+                          htmlFor={`solicitado-${detalle.id}`}
+                          className="text-xs text-[#6B7280]"
+                        >
+                          Cant.
+                        </label>
+
+                        <input
+                          id={`solicitado-${detalle.id}`}
+                          type="number"
+                          min="1"
+                          max={disponibleDe(detalle)}
+                          required
+                          value={detalle.cantidad}
+                          onChange={(event) =>
+                            cambiarCantidadSolicitada(detalle.id, event.target.value)
+                          }
+                          className="w-16 rounded-md border border-[#D1D5DB] px-2 py-1.5 text-center text-sm"
+                        />
+
+                        <Button
+                          type="button"
+                          variant="outlineDanger"
+                          size="sm"
+                          onClick={() => quitarSolicitado(detalle.id)}
+                        >
+                          <Trash2 size={15} />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-[#D1D5DB] bg-[#FAFAFC] py-4 text-center text-sm text-[#6B7280]">
+                  {agotados.length === detallesPublicacion.length
+                    ? "No hay unidades disponibles: están reservadas por otras operaciones."
+                    : "Quitaste todos los productos."}
+                </div>
+              )}
+
+              {agotados.length > 0 && (
+                <p className="mt-2 text-xs text-[#9CA3AF]">
+                  Sin unidades disponibles (reservadas):{" "}
+                  {agotados.map((detalle) => detalle.producto?.nombre ?? "Producto").join(", ")}
+                </p>
+              )}
+
+              {solicitados.length > 0 && (
+                <div className="mt-4 flex justify-between gap-4 border-t border-[#E5E7EB] pt-4 text-sm">
+                  <span className="font-semibold text-[#374151]">Total de referencia solicitado</span>
+                  <strong className="text-[#1F2937]">
+                    {solicitados.some((detalle) => detalle.precioUnitario == null)
+                      ? "No disponible"
+                      : dinero(
+                          solicitados.reduce(
+                            (total, detalle) =>
+                              total + Number(detalle.precioUnitario) * Number(detalle.cantidad || 0),
+                            0
+                          )
+                        )}
+                  </strong>
+                </div>
+              )}
+            </>
           )}
         </Card>
 

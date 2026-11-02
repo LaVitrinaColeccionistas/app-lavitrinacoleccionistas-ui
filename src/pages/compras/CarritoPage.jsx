@@ -12,7 +12,7 @@ import Breadcrumb from "../../components/layout/Breadcrumb";
 import Modal from "../../components/ui/Modal";
 import { useAuth } from "../../context/AuthContext";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
-import { crearReserva, obtenerPublicacion, obtenerPublicaciones } from "../../services/catalogoService";
+import { ORIGEN_RESERVA, reservarStock, obtenerPublicacion, obtenerPublicaciones } from "../../services/catalogoService";
 import { actualizarEstadoOrden, actualizarOrden, cancelarOrden, crearOrden, obtenerOrden } from "../../services/comprasService";
 import { HORAS_DE_VIGENCIA, guardarCarrito, leerCarrito } from "../../utils/carrito";
 import { ApiError } from "../../services/api";
@@ -24,7 +24,7 @@ const detalleDe = (d) => ({
   nombre: d.producto?.nombre ?? d.nombreProducto ?? "Producto",
   imagen: d.producto?.urlImagen ?? "",
   precioUnitario: Number(d.precioUnitario ?? 0),
-  disponible: d.cantidadPublicada ?? null,
+  disponible: d.cantidadDisponible ?? d.cantidadPublicada ?? null,
 });
 
 const resumenPublicacion = (pub) => {
@@ -333,7 +333,7 @@ export default function CarritoPage() {
       } else {
         const orden = await crearOrden(datos);
         try {
-          await crearReserva({ idOrden: orden.id, items: await itemsDeReserva(items) });
+          await reservarStock(ORIGEN_RESERVA.ORDEN, orden.id, await itemsDeReserva(items));
         } catch (err) {
           // No dejar una orden PENDIENTE sin stock apartado: se pasa a CANCELADA
           await actualizarEstadoOrden(orden.id, "CANCELADA")

@@ -95,14 +95,31 @@ export const actualizarOferta = (id, datos) =>
 export const aceptarOferta = (id) => request(`${RUTA_OFERTAS}/${id}/aceptar`, { method: "POST" });
 export const rechazarOferta = (id) => request(`${RUTA_OFERTAS}/${id}/rechazar`, { method: "POST" });
 
-// Reservas de stock (por orden)
+// Reservas de stock (genéricas por origen)
 
-// POST /api/reservas  { idOrden, items: [{ idDetallePublicacion, cantidad }] }  (todo o nada, idempotente)
-export const crearReserva = (datos) =>
-  request(RUTA_RESERVAS, { method: "POST", body: datos });
+export const ORIGEN_RESERVA = { ORDEN: "ORDEN", OFERTA: "OFERTA", INTERCAMBIO: "INTERCAMBIO" };
 
-export const confirmarReserva = (idOrden) => request(`${RUTA_RESERVAS}/${idOrden}/confirmar`, { method: "POST" });
-export const liberarReserva = (idOrden) => request(`${RUTA_RESERVAS}/${idOrden}/liberar`, { method: "POST" });
+// POST /api/reservas  { origen, idOrigen, items: [{ idDetallePublicacion | idProducto, cantidad, idUsuarioDestino? }] }
+// Todo o nada e idempotente por ítem (reintentar no duplica). OFERTA no se reserva desde acá: lo hace aceptarOferta.
+export const reservarStock = (origen, idOrigen, items) =>
+  request(RUTA_RESERVAS, { method: "POST", body: { origen, idOrigen, items } });
+
+export const obtenerReservas = (origen, idOrigen) =>
+  request(`${RUTA_RESERVAS}/${origen}/${idOrigen}`);
+
+// Descuenta stock (y transfiere al destinatario si la reserva tiene idUsuarioDestino). Idempotente.
+export const confirmarReserva = (origen, idOrigen) =>
+  request(`${RUTA_RESERVAS}/${origen}/${idOrigen}/confirmar`, { method: "POST" });
+
+export const liberarReserva = (origen, idOrigen) =>
+  request(`${RUTA_RESERVAS}/${origen}/${idOrigen}/liberar`, { method: "POST" });
+
+// Oferta aceptada -> orden: la reserva de la oferta pasa a ser de la orden
+export const reasignarReserva = (origen, idOrigen, nuevoOrigen, nuevoIdOrigen) =>
+  request(`${RUTA_RESERVAS}/${origen}/${idOrigen}/reasignar`, {
+    method: "POST",
+    body: { origen: nuevoOrigen, idOrigen: nuevoIdOrigen },
+  });
 
 // POST /api/reservas/liberar-vencidas  -> { liberadas }
 export const liberarReservasVencidas = () => request(`${RUTA_RESERVAS}/liberar-vencidas`, { method: "POST" });

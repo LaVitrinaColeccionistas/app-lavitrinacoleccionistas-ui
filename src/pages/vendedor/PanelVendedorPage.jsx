@@ -11,6 +11,7 @@ import Pagination from "../../components/common/Pagination";
 import Table from "../../components/common/Table";
 import Breadcrumb from "../../components/layout/Breadcrumb";
 import {
+  ORIGEN_RESERVA,
   aceptarOferta,
   actualizarEstadoPublicacion,
   confirmarReserva,
@@ -29,8 +30,15 @@ import { getUserId } from "../../utils/session";
 import useNombres from "../../hooks/useNombres";
 import { formatearDinero, formatearFecha, imagenDePublicacion } from "./opciones";
 import { ESTADOS_ORDEN, etiqueta, variantesOrden } from "../compras/opciones";
+import { porcentajeDe, precioTotal } from "../../utils/precios";
 
 const POR_PAGINA = 10;
+
+/** " (83 % del lote de Gs. 300.000)" o "" si no hay valor de referencia. */
+const textoPorcentaje = (o) => {
+  const pct = porcentajeDe(o.montoOfertado, o.valorLote);
+  return pct == null ? "" : ` (${pct} % del lote de ${formatearDinero(o.valorLote)})`;
+};
 
 const variantesOferta = { PENDIENTE: "warning", ACEPTADA: "success", RECHAZADA: "danger", EXPIRADA: "neutral" };
 const variantesPublicacion = { ACTIVA: "success", PAUSADA: "warning", VENDIDA: "info", ELIMINADA: "neutral" };
@@ -232,6 +240,7 @@ export default function PanelVendedorPage() {
                 ...o,
                 tituloPublicacion: p.titulo,
                 imagen: imagenDePublicacion(p),
+                valorLote: precioTotal(p),
               }))
             )
             .catch(() => [])
@@ -334,8 +343,8 @@ export default function PanelVendedorPage() {
       confirmLabel: "Aceptar oferta",
       confirmVariant: "success",
       id: o.id,
-      mensaje: `Vas a aceptar la oferta de ${formatearDinero(o.montoOfertado)} de ${nombreDe(o.idComprador, `Comprador #${o.idComprador}`)} por "${o.tituloPublicacion}".`,
-      detalle: "Esta acción no se puede deshacer.",
+      mensaje: `Vas a aceptar la oferta de ${formatearDinero(o.montoOfertado)}${textoPorcentaje(o)} de ${nombreDe(o.idComprador, `Comprador #${o.idComprador}`)} por "${o.tituloPublicacion}".`,
+      detalle: "Se reservan todas las unidades de la publicación para el comprador (tiene 48 h para pagar) y se rechazan las demás ofertas pendientes. No se puede deshacer.",
       run: () => aceptarOferta(o.id),
       ok: "Oferta aceptada.",
     }),
@@ -361,7 +370,7 @@ export default function PanelVendedorPage() {
         detalle: sig.detalle,
         // Ambos pasos son idempotentes: si el PATCH falla, reintentar no descuenta stock dos veces
         run: async () => {
-          await confirmarReserva(v.id);
+          await confirmarReserva(ORIGEN_RESERVA.ORDEN, v.id);
           await actualizarEstadoOrden(v.id, sig.estado);
         },
         ok: `Orden N° ${v.numero} marcada como ${nombre}.`,
@@ -375,7 +384,7 @@ export default function PanelVendedorPage() {
       mensaje: `¿Cancelás la orden N° ${v.numero}?`,
       detalle: "Se liberan las reservas: el stock apartado vuelve a estar disponible.",
       run: async () => {
-        await liberarReserva(v.id);
+        await liberarReserva(ORIGEN_RESERVA.ORDEN, v.id);
         await actualizarEstadoOrden(v.id, "CANCELADA");
       },
       ok: `Orden N° ${v.numero} cancelada.`,
@@ -460,7 +469,14 @@ export default function PanelVendedorPage() {
               <span className="font-semibold text-[#1F2937]">{o.tituloPublicacion}</span>
             </div>
           </td>
-          <td className="px-4 py-4 font-bold text-[#1F2937]">{formatearDinero(o.montoOfertado)}</td>
+          <td className="px-4 py-4">
+            <span className="font-bold text-[#1F2937]">{formatearDinero(o.montoOfertado)}</span>
+            {porcentajeDe(o.montoOfertado, o.valorLote) != null && (
+              <span className="block text-xs text-[#6B7280]">
+                {porcentajeDe(o.montoOfertado, o.valorLote)} % del lote ({formatearDinero(o.valorLote)})
+              </span>
+            )}
+          </td>
           <td className="px-4 py-4">
             <Badge variant={variantesOferta[o.estadoOferta] ?? "neutral"}>{capitalizar(o.estadoOferta)}</Badge>
           </td>
