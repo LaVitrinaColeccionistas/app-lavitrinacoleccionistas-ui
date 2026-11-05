@@ -1,6 +1,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeftRight, Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { resolverError } from "../../utils/errores";
 
 import Alert from "../../components/common/Alert";
 import Badge from "../../components/common/Badge";
@@ -72,6 +74,7 @@ function obtenerMensajeError(err, mensajeAlternativo) {
 
 export default function IntercambiosPage() {
   const { usuarioId, tieneRol } = useAuth();
+  const navigate = useNavigate();
   const esAdmin = tieneRol("ADMIN");
 
   const columnas = [
@@ -181,6 +184,7 @@ export default function IntercambiosPage() {
       } catch (err) {
         if (!activo) return;
         console.error(err);
+        if (resolverError(err, navigate)) return;
         setError("No fue posible cargar los intercambios.");
       } finally {
         if (activo) setCargando(false);
@@ -198,6 +202,7 @@ export default function IntercambiosPage() {
     filtroEstado,
     fechaDesde,
     fechaHasta,
+    navigate,
   ]);
 
   useEffect(() => {
@@ -250,30 +255,24 @@ export default function IntercambiosPage() {
     cargarProductos();
   }, [intercambios]);
 
-  const esProponente =
-    seleccionado != null &&
-    usuarioId != null &&
-    Number(usuarioId) ===
-      Number(seleccionado.idUsuarioProponente);
+  const esReceptor = seleccionado != null && usuarioId != null &&
+    Number(usuarioId) === Number(seleccionado.idUsuarioReceptor);
 
-  const esReceptor =
-    seleccionado != null &&
-    usuarioId != null &&
-    Number(usuarioId) ===
-      Number(seleccionado.idUsuarioReceptor);
+  const puedeEditar = seleccionado?.estado === "PROPUESTO" &&
+    Number(usuarioId) === Number(seleccionado?.idUsuarioProponente);
 
-  const puedeAceptarORechazar =
-    seleccionado?.estado === "PROPUESTO" && esReceptor;
-
-  const puedeCancelar =
-    seleccionado?.estado === "PROPUESTO" && esProponente;
-
-  const puedeCompletar =
-    seleccionado?.estado === "ACEPTADO" && esReceptor;
-
-  const puedeEditar =
-    seleccionado?.estado === "PROPUESTO" && esProponente;
-
+  function permisos(intercambio) {
+    const proponente = usuarioId != null &&
+      Number(usuarioId) === Number(intercambio.idUsuarioProponente);
+    const receptor = usuarioId != null &&
+      Number(usuarioId) === Number(intercambio.idUsuarioReceptor);
+    return {
+      editar: intercambio.estado === "PROPUESTO" && proponente,
+      cancelar: intercambio.estado === "PROPUESTO" && proponente,
+      aceptarRechazar: intercambio.estado === "PROPUESTO" && receptor,
+      completar: intercambio.estado === "ACEPTADO" && receptor,
+    };
+  }
 
   function mostrarTipoMovimiento(tipo) {
     if (esReceptor) {
@@ -290,7 +289,7 @@ export default function IntercambiosPage() {
   async function consultarDetallesPublicacion(idPublicacion) {
     const size = 50;
     let page = 0;
-    let totalPages = 1;
+    let totalPages;
     const detalles = [];
 
     do {
@@ -320,10 +319,10 @@ export default function IntercambiosPage() {
     return detalles;
   }
 
-  async function iniciarEdicion() {
-    if (!puedeEditar || cargandoEdicion) return;
+  async function iniciarEdicion(intercambio) {
+    if (!permisos(intercambio).editar || cargandoEdicion) return;
 
-    const intercambio = seleccionado;
+    seleccionarIntercambio(intercambio);
     const version = ++edicionVersion.current;
 
     try {
@@ -435,6 +434,10 @@ export default function IntercambiosPage() {
     } catch (err) {
       if (version !== edicionVersion.current) return;
       console.error(err);
+      if (err?.status >= 500 || err?.status == null) {
+        resolverError(err, navigate);
+        return;
+      }
       setError(
         err?.message ||
           "No se pudo consultar la disponibilidad."
@@ -619,6 +622,10 @@ export default function IntercambiosPage() {
       );
     } catch (err) {
       console.error(err);
+      if (err?.status >= 500 || err?.status == null) {
+        resolverError(err, navigate);
+        return;
+      }
       setError(
         obtenerMensajeError(
           err,
@@ -631,18 +638,15 @@ export default function IntercambiosPage() {
     }
   }
 
-  async function cambiarEstado(nuevoEstado) {
-    if (!seleccionado || actualizandoEstado) return;
+  async function cambiarEstado(intercambio, nuevoEstado) {
+    if (actualizandoEstado) return;
 
-    const permitido =
-      nuevoEstado === "CANCELADO"
-        ? puedeCancelar
-        : nuevoEstado === "COMPLETADO"
-          ? puedeCompletar
-          : ["ACEPTADO", "RECHAZADO"].includes(
-                nuevoEstado
-              ) && puedeAceptarORechazar;
-
+    const p = permisos(intercambio);
+    const permitido = nuevoEstado === "CANCELADO"
+      ? p.cancelar
+      : nuevoEstado === "COMPLETADO"
+        ? p.completar
+        : ["ACEPTADO", "RECHAZADO"].includes(nuevoEstado) && p.aceptarRechazar;
     if (!permitido) return;
 
     try {
@@ -652,11 +656,11 @@ export default function IntercambiosPage() {
 
       const actualizado =
         await cambiarEstadoIntercambio(
-          seleccionado.id,
+          intercambio.id,
           nuevoEstado
         );
 
-      setSeleccionado(actualizado);
+      setSeleccionado((actual) => actual?.id === actualizado.id ? actualizado : actual);
       setIntercambios((actuales) =>
         actuales.map((intercambio) =>
           intercambio.id === actualizado.id
@@ -676,6 +680,10 @@ export default function IntercambiosPage() {
       );
     } catch (err) {
       console.error(err);
+      if (err?.status >= 500 || err?.status == null) {
+        resolverError(err, navigate);
+        return;
+      }
       setError(
         err?.status === 404 &&
         nuevoEstado === "COMPLETADO"
@@ -691,13 +699,7 @@ export default function IntercambiosPage() {
   }
 
   async function handleEliminar() {
-    if (
-      !seleccionado ||
-      eliminando ||
-      !esAdmin
-    ) {
-      return;
-    }
+    if (!seleccionado || eliminando || !esAdmin) return;
 
     try {
       setEliminando(true);
@@ -720,6 +722,10 @@ export default function IntercambiosPage() {
       );
     } catch (err) {
       console.error(err);
+      if (err?.status >= 500 || err?.status == null) {
+        resolverError(err, navigate);
+        return;
+      }
       setError(
         "No fue posible eliminar el intercambio."
       );
@@ -811,7 +817,7 @@ export default function IntercambiosPage() {
       )}
 
       {/* MODAL DETALLE */}
-      {seleccionado && (
+      {seleccionado && !modalEliminar && (
         <FormOverlay
           onClose={() => {
             if (
@@ -1216,115 +1222,6 @@ export default function IntercambiosPage() {
               )}
             </dl>
 
-            {/* ACCIONES */}
-            {(puedeAceptarORechazar ||
-              puedeEditar ||
-              puedeCancelar ||
-              puedeCompletar) && (
-              <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-[#ECEEF2] pt-5">
-                {puedeEditar &&
-                  !editando && (
-                    <Button
-                      variant="outline"
-                      loading={cargandoEdicion}
-                      disabled={
-                        actualizandoEstado ||
-                        cargandoEdicion
-                      }
-                      onClick={
-                        iniciarEdicion
-                      }
-                    >
-                      Editar
-                    </Button>
-                  )}
-
-                {puedeAceptarORechazar &&
-                  !editando && (
-                    <>
-                      <Button
-                        variant="success"
-                        loading={
-                          actualizandoEstado
-                        }
-                        onClick={() =>
-                          cambiarEstado(
-                            "ACEPTADO"
-                          )
-                        }
-                      >
-                        Aceptar
-                      </Button>
-
-                      <Button
-                        variant="outlineDanger"
-                        disabled={
-                          actualizandoEstado
-                        }
-                        onClick={() =>
-                          cambiarEstado(
-                            "RECHAZADO"
-                          )
-                        }
-                      >
-                        Rechazar
-                      </Button>
-                    </>
-                  )}
-
-                {puedeCancelar &&
-                  !editando && (
-                    <Button
-                      variant="outlineDanger"
-                      disabled={
-                        actualizandoEstado
-                      }
-                      onClick={() =>
-                        cambiarEstado(
-                          "CANCELADO"
-                        )
-                      }
-                    >
-                      Cancelar
-                    </Button>
-                  )}
-
-                {puedeCompletar &&
-                  !editando && (
-                    <Button
-                      variant="success"
-                      loading={
-                        actualizandoEstado
-                      }
-                      onClick={() =>
-                        cambiarEstado(
-                          "COMPLETADO"
-                        )
-                      }
-                    >
-                      Completado
-                    </Button>
-                  )}
-              </div>
-            )}
-
-            {esAdmin &&
-              !editando && (
-                <div className="mt-5 flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outlineDanger"
-                    loading={
-                      eliminando
-                    }
-                    onClick={() =>
-                      setModalEliminar(true)
-                    }
-                  >
-                    Eliminar
-                  </Button>
-                </div>
-              )}
           </Card>
         </FormOverlay>
       )}
@@ -1480,18 +1377,47 @@ export default function IntercambiosPage() {
               </td>
 
               <td className="px-4 py-4">
-                <div className="flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      seleccionarIntercambio(
-                        intercambio
-                      )
-                    }
-                  >
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button variant="outline" size="sm"
+                    onClick={() => seleccionarIntercambio(intercambio)}>
                     Ver detalle
                   </Button>
+                  {permisos(intercambio).editar && (
+                    <Button variant="outlineInfo" size="sm"
+                      disabled={cargandoEdicion || actualizandoEstado}
+                      loading={cargandoEdicion}
+                      onClick={() => iniciarEdicion(intercambio)}>
+                      Editar
+                    </Button>
+                  )}
+                  {permisos(intercambio).aceptarRechazar && (
+                    <>
+                      <Button variant="success" size="sm"
+                        disabled={actualizandoEstado}
+                        onClick={() => cambiarEstado(intercambio, "ACEPTADO")}>Aceptar</Button>
+                      <Button variant="outlineDanger" size="sm"
+                        disabled={actualizandoEstado}
+                        onClick={() => cambiarEstado(intercambio, "RECHAZADO")}>Rechazar</Button>
+                    </>
+                  )}
+                  {permisos(intercambio).cancelar && (
+                    <Button variant="outlineDanger" size="sm"
+                      disabled={actualizandoEstado}
+                      onClick={() => cambiarEstado(intercambio, "CANCELADO")}>Cancelar</Button>
+                  )}
+                  {permisos(intercambio).completar && (
+                    <Button variant="success" size="sm"
+                      disabled={actualizandoEstado}
+                      onClick={() => cambiarEstado(intercambio, "COMPLETADO")}>Completar</Button>
+                  )}
+                  {esAdmin && (
+                    <Button variant="outlineDanger" size="sm"
+                      disabled={eliminando}
+                      onClick={() => {
+                        seleccionarIntercambio(intercambio);
+                        setModalEliminar(true);
+                      }}>Eliminar</Button>
+                  )}
                 </div>
               </td>
             </>

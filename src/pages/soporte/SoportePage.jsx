@@ -1,6 +1,7 @@
 
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { resolverError } from "../../utils/errores";
 import { Headphones, Send } from "lucide-react";
 
 import Alert from "../../components/common/Alert";
@@ -20,6 +21,7 @@ const formularioInicial = {
 };
 
 export default function SoportePage() {
+  const navigate = useNavigate();
   const [formulario, setFormulario] = useState(formularioInicial);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState("");
@@ -77,6 +79,10 @@ export default function SoportePage() {
       );
     } catch (err) {
       console.error(err);
+      if (err?.status >= 500 || err?.status == null) {
+        resolverError(err, navigate);
+        return;
+      }
 
       if (err.status === 401 || err.status === 403) {
         setError(
