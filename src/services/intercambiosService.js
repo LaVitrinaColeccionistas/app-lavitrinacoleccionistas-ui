@@ -33,3 +33,9 @@ export const crearIntercambio = (datos) =>
 
 export const eliminarIntercambio = (id) =>
   request(`${RUTA}/${id}`, { method: "DELETE" });
+
+export const actualizarIntercambio = (id, datos) =>
+  request(`${RUTA}/${id}`, {
+    method: "PUT",
+    body: datos,
+  });

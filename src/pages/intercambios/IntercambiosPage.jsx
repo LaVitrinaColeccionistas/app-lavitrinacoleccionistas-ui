@@ -16,18 +16,14 @@ import { useAuth } from "../../context/AuthContext";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
 import { obtenerNombresUsuarios } from "../../services/authService";
 import {
-  ORIGEN_RESERVA,
-  confirmarReserva,
-  liberarReserva,
   obtenerProducto,
-  obtenerPublicacion,
-  reservarStock,
+  obtenerDetallesPublicacion,
 } from "../../services/catalogoService";
-
 import {
   obtenerIntercambios,
   cambiarEstadoIntercambio,
   eliminarIntercambio,
+  actualizarIntercambio,
 } from "../../services/intercambiosService";
 
 const variantesEstado = {
@@ -40,16 +36,12 @@ const variantesEstado = {
 
 function formatearEstado(estado) {
   if (!estado) return "-";
-
-  return (
-    estado.charAt(0).toUpperCase() +
-    estado.slice(1).toLowerCase()
-  );
+  return estado.charAt(0).toUpperCase() +
+    estado.slice(1).toLowerCase();
 }
 
 function formatearFecha(fecha) {
   if (!fecha) return "-";
-
   return new Intl.DateTimeFormat("es-PY", {
     day: "2-digit",
     month: "2-digit",
@@ -65,53 +57,17 @@ function formatearDinero(valor) {
   }).format(Number(valor ?? 0));
 }
 
-/*
- * Sincroniza el stock en catálogo ANTES de cambiar el estado del intercambio.
- * Si catálogo responde error, el estado no cambia. Todas las llamadas son idempotentes:
- * si después falla el PATCH, reintentar no duplica nada.
- *  - PROPUESTO  -> lo OFRECIDO ya quedó reservado al proponer.
- *  - ACEPTADO   -> se reserva lo SOLICITADO (unidades de la publicación del receptor).
- *  - RECHAZADO / CANCELADO -> se libera todo.
- *  - COMPLETADO -> se confirma: descuenta stock y crea los productos para cada destinatario.
- */
-async function sincronizarStock(intercambio, nuevoEstado) {
-  const id = intercambio.id;
+function extraerContenido(respuesta) {
+  if (Array.isArray(respuesta)) return respuesta;
+  if (Array.isArray(respuesta?.content)) return respuesta.content;
+  return [];
+}
 
-  if (nuevoEstado === "ACEPTADO") {
-    const solicitados = (intercambio.detalles ?? []).filter(
-      (d) => d.tipoMovimiento === "SOLICITADO"
-    );
-    if (!solicitados.length) return;
-
-    const publicacion = intercambio.idPublicacion
-      ? await obtenerPublicacion(intercambio.idPublicacion)
-      : null;
-
-    const items = solicitados.map((d) => {
-      const detalle = publicacion?.detalles?.find(
-        (det) => String(det.producto?.id) === String(d.idProducto)
-      );
-      return {
-        ...(detalle
-          ? { idDetallePublicacion: detalle.id }
-          : { idProducto: d.idProducto }),
-        cantidad: Number(d.cantidad),
-        idUsuarioDestino: intercambio.idUsuarioProponente,
-      };
-    });
-
-    await reservarStock(ORIGEN_RESERVA.INTERCAMBIO, id, items);
-    return;
+function obtenerMensajeError(err, mensajeAlternativo) {
+  if ([400, 403, 404, 409].includes(err?.status)) {
+    return err?.message || mensajeAlternativo;
   }
-
-  if (nuevoEstado === "RECHAZADO" || nuevoEstado === "CANCELADO") {
-    await liberarReserva(ORIGEN_RESERVA.INTERCAMBIO, id);
-    return;
-  }
-
-  if (nuevoEstado === "COMPLETADO") {
-    await confirmarReserva(ORIGEN_RESERVA.INTERCAMBIO, id);
-  }
+  return mensajeAlternativo;
 }
 
 export default function IntercambiosPage() {
@@ -136,10 +92,13 @@ export default function IntercambiosPage() {
   const [intercambios, setIntercambios] = useState([]);
   const [nombresUsuarios, setNombresUsuarios] = useState({});
   const [seleccionado, setSeleccionado] = useState(null);
+  const [editando, setEditando] = useState(false);
+  const [cargandoEdicion, setCargandoEdicion] = useState(false);
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [formEdicion, setFormEdicion] = useState(null);
 
   const [busqueda, setBusqueda] = useState("");
   const busquedaAplicada = useDebouncedValue(busqueda, 400);
-
   const [filtroEstado, setFiltroEstado] = useState("");
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
@@ -150,7 +109,9 @@ export default function IntercambiosPage() {
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [datosProductos, setDatosProductos] = useState({});
+
   const productosConsultados = useRef(new Set());
+  const edicionVersion = useRef(0);
 
   useEffect(() => {
     let activo = true;
@@ -172,7 +133,6 @@ export default function IntercambiosPage() {
         if (!activo) return;
 
         const contenido = data.content ?? [];
-
         setIntercambios(contenido);
         setTotalPaginas(data.totalPages ?? 0);
 
@@ -188,7 +148,6 @@ export default function IntercambiosPage() {
         if (ids.length) {
           try {
             const perfiles = await obtenerNombresUsuarios(ids);
-
             if (!activo) return;
 
             setNombresUsuarios(
@@ -203,9 +162,8 @@ export default function IntercambiosPage() {
             );
           } catch (err) {
             if (!activo) return;
-
             console.error(
-              "No fue posible obtener los nombres de usuarios:",
+              "No fue posible obtener los nombres:",
               err
             );
             setNombresUsuarios({});
@@ -215,19 +173,13 @@ export default function IntercambiosPage() {
         }
 
         setSeleccionado((actual) => {
-          if (actual) {
-            const actualizado = contenido.find(
-              (item) => item.id === actual.id
-            );
-
-            if (actualizado) return actualizado;
-          }
-
-          return null;
+          if (!actual) return null;
+          return contenido.find(
+            (item) => item.id === actual.id
+          ) ?? null;
         });
       } catch (err) {
         if (!activo) return;
-
         console.error(err);
         setError("No fue posible cargar los intercambios.");
       } finally {
@@ -240,7 +192,13 @@ export default function IntercambiosPage() {
     return () => {
       activo = false;
     };
-  }, [pagina, busquedaAplicada, filtroEstado, fechaDesde, fechaHasta]);
+  }, [
+    pagina,
+    busquedaAplicada,
+    filtroEstado,
+    fechaDesde,
+    fechaHasta,
+  ]);
 
   useEffect(() => {
     const ids = [
@@ -257,7 +215,7 @@ export default function IntercambiosPage() {
         !productosConsultados.current.has(String(id))
     );
 
-    if (ids.length === 0) return;
+    if (!ids.length) return;
 
     ids.forEach((id) => {
       productosConsultados.current.add(String(id));
@@ -281,7 +239,7 @@ export default function IntercambiosPage() {
         }
       });
 
-      if (Object.keys(productos).length > 0) {
+      if (Object.keys(productos).length) {
         setDatosProductos((actuales) => ({
           ...actuales,
           ...productos,
@@ -313,6 +271,366 @@ export default function IntercambiosPage() {
   const puedeCompletar =
     seleccionado?.estado === "ACEPTADO" && esReceptor;
 
+  const puedeEditar =
+    seleccionado?.estado === "PROPUESTO" && esProponente;
+
+
+  function mostrarTipoMovimiento(tipo) {
+    if (esReceptor) {
+      return tipo === "OFRECIDO"
+        ? "Solicitado"
+        : "Ofrecido";
+    }
+
+    return tipo === "OFRECIDO"
+      ? "Ofrecido"
+      : "Solicitado";
+  }
+
+  async function consultarDetallesPublicacion(idPublicacion) {
+    const size = 50;
+    let page = 0;
+    let totalPages = 1;
+    const detalles = [];
+
+    do {
+      const respuesta = await obtenerDetallesPublicacion(
+        idPublicacion,
+        { page, size }
+      );
+
+      if (
+        !Array.isArray(respuesta) &&
+        !Array.isArray(respuesta?.content)
+      ) {
+        throw new Error(
+          "Formato de detalles de publicación no reconocido."
+        );
+      }
+
+      detalles.push(...extraerContenido(respuesta));
+
+      totalPages = Array.isArray(respuesta)
+        ? 1
+        : Number(respuesta.totalPages ?? 1);
+
+      page++;
+    } while (page < totalPages);
+
+    return detalles;
+  }
+
+  async function iniciarEdicion() {
+    if (!puedeEditar || cargandoEdicion) return;
+
+    const intercambio = seleccionado;
+    const version = ++edicionVersion.current;
+
+    try {
+      setCargandoEdicion(true);
+      setError("");
+      setMensaje("");
+
+      const detallesActuales = intercambio.detalles ?? [];
+
+      const idsProductos = [
+        ...new Set(
+          detallesActuales
+            .map((d) => d.idProducto)
+            .filter((id) => id != null)
+        ),
+      ];
+
+      const [detallesPublicacion, productosActualizados] =
+        await Promise.all([
+          consultarDetallesPublicacion(
+            intercambio.idPublicacion
+          ),
+          Promise.all(
+            idsProductos.map((id) => obtenerProducto(id))
+          ),
+        ]);
+
+      if (version !== edicionVersion.current) return;
+
+      const productosPorId = Object.fromEntries(
+        idsProductos.map((id, index) => [
+          id,
+          productosActualizados[index],
+        ])
+      );
+
+      setDatosProductos((actuales) => ({
+        ...actuales,
+        ...productosPorId,
+      }));
+
+      const detallesForm = detallesActuales.map((detalle) => {
+        if (detalle.tipoMovimiento === "SOLICITADO") {
+          const detallePublicado = detallesPublicacion.find(
+            (d) =>
+              Number(d.idProducto ?? d.producto?.id) ===
+              Number(detalle.idProducto)
+          );
+
+          if (!detallePublicado) {
+            throw new Error(
+              `El producto "${detalle.nombreProductoSnapshot}" ya no está en la publicación.`
+            );
+          }
+
+          const disponible = Number(
+            detallePublicado.cantidadDisponible
+          );
+
+          if (
+            !Number.isInteger(disponible) ||
+            disponible < 0
+          ) {
+            throw new Error(
+              `No se pudo determinar la disponibilidad de "${detalle.nombreProductoSnapshot}".`
+            );
+          }
+
+          return {
+            idProducto: detalle.idProducto,
+            tipoMovimiento: detalle.tipoMovimiento,
+            cantidad: String(detalle.cantidad),
+            maxCantidad: disponible,
+            limiteVerificado: true,
+          };
+        }
+
+        const stock = Number(
+          productosPorId[detalle.idProducto]?.stock
+        );
+
+        if (!Number.isInteger(stock) || stock < 0) {
+          throw new Error(
+            `No se pudo consultar el stock de "${detalle.nombreProductoSnapshot}".`
+          );
+        }
+
+        return {
+          idProducto: detalle.idProducto,
+          tipoMovimiento: detalle.tipoMovimiento,
+          cantidad: String(detalle.cantidad),
+          maxCantidad: stock,
+          limiteVerificado: false,
+        };
+      });
+
+      setFormEdicion({
+        detalles: detallesForm,
+        diferenciaDinero: String(
+          intercambio.diferenciaDinero ?? 0
+        ),
+        usuarioPagaDiferencia:
+          intercambio.usuarioPagaDiferencia == null
+            ? ""
+            : String(intercambio.usuarioPagaDiferencia),
+      });
+
+      setEditando(true);
+    } catch (err) {
+      if (version !== edicionVersion.current) return;
+      console.error(err);
+      setError(
+        err?.message ||
+          "No se pudo consultar la disponibilidad."
+      );
+    } finally {
+      if (version === edicionVersion.current) {
+        setCargandoEdicion(false);
+      }
+    }
+  }
+
+  function cancelarEdicion() {
+    edicionVersion.current++;
+    setEditando(false);
+    setFormEdicion(null);
+    setCargandoEdicion(false);
+    setError("");
+  }
+
+  function cambiarCantidad(index, valor) {
+    if (
+      valor !== "" &&
+      (!/^\d+$/.test(valor) ||
+        !Number.isSafeInteger(Number(valor)))
+    ) {
+      return;
+    }
+
+    const limite = formEdicion?.detalles[index]?.maxCantidad;
+
+    if (
+      valor !== "" &&
+      Number(valor) > limite
+    ) {
+      return;
+    }
+
+    setFormEdicion((actual) => ({
+      ...actual,
+      detalles: actual.detalles.map((detalle, i) =>
+        i === index
+          ? { ...detalle, cantidad: valor }
+          : detalle
+      ),
+    }));
+  }
+
+  async function guardarEdicion() {
+    if (
+      !puedeEditar ||
+      !formEdicion ||
+      guardandoEdicion
+    ) {
+      return;
+    }
+
+    const detalles = formEdicion.detalles.map((d) => ({
+      idProducto: d.idProducto,
+      tipoMovimiento: d.tipoMovimiento,
+      cantidad: Number(d.cantidad),
+    }));
+
+    if (
+      detalles.some(
+        (d, index) =>
+          formEdicion.detalles[index].cantidad === "" ||
+          !Number.isSafeInteger(d.cantidad) ||
+          d.cantidad < 1
+      )
+    ) {
+      setError(
+        "Las cantidades deben ser números enteros mayores a cero."
+      );
+      return;
+    }
+
+    if (
+      detalles.some(
+        (d, index) =>
+          d.cantidad >
+          formEdicion.detalles[index].maxCantidad
+      )
+    ) {
+      setError(
+        "La cantidad supera la disponibilidad permitida."
+      );
+      return;
+    }
+
+    const diferencia = Number(
+      formEdicion.diferenciaDinero
+    );
+
+    if (
+      formEdicion.diferenciaDinero === "" ||
+      !Number.isFinite(diferencia) ||
+      diferencia < 0
+    ) {
+      setError(
+        "La diferencia de dinero debe ser mayor o igual a cero."
+      );
+      return;
+    }
+
+    if (
+      diferencia > 0 &&
+      !formEdicion.usuarioPagaDiferencia
+    ) {
+      setError("Seleccioná quién paga la diferencia.");
+      return;
+    }
+
+    try {
+      setGuardandoEdicion(true);
+      setError("");
+      setMensaje("");
+
+      const solicitados = detalles.filter(
+        (d) => d.tipoMovimiento === "SOLICITADO"
+      );
+
+      if (solicitados.length) {
+        const publicados =
+          await consultarDetallesPublicacion(
+            seleccionado.idPublicacion
+          );
+
+        for (const detalle of solicitados) {
+          const publicado = publicados.find(
+            (d) =>
+              Number(d.idProducto ?? d.producto?.id) ===
+              Number(detalle.idProducto)
+          );
+
+          const disponible = Number(
+            publicado?.cantidadDisponible
+          );
+
+          if (
+            !publicado ||
+            !Number.isInteger(disponible) ||
+            detalle.cantidad > disponible
+          ) {
+            throw new Error(
+              "La disponibilidad de la publicación cambió. Volvé a abrir la edición para actualizar las cantidades."
+            );
+          }
+        }
+      }
+
+      const actualizado = await actualizarIntercambio(
+        seleccionado.id,
+        {
+          idUsuarioProponente:
+            seleccionado.idUsuarioProponente,
+          idUsuarioReceptor:
+            seleccionado.idUsuarioReceptor,
+          idPublicacion: seleccionado.idPublicacion,
+          detalles,
+          diferenciaDinero: diferencia,
+          usuarioPagaDiferencia:
+            diferencia === 0
+              ? null
+              : Number(
+                  formEdicion.usuarioPagaDiferencia
+                ),
+        }
+      );
+
+      setSeleccionado(actualizado);
+      setIntercambios((actuales) =>
+        actuales.map((item) =>
+          item.id === actualizado.id
+            ? actualizado
+            : item
+        )
+      );
+
+      cancelarEdicion();
+      setMensaje(
+        "Intercambio actualizado correctamente."
+      );
+    } catch (err) {
+      console.error(err);
+      setError(
+        obtenerMensajeError(
+          err,
+          err?.message ||
+            "No fue posible actualizar el intercambio."
+        )
+      );
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  }
+
   async function cambiarEstado(nuevoEstado) {
     if (!seleccionado || actualizandoEstado) return;
 
@@ -321,8 +639,9 @@ export default function IntercambiosPage() {
         ? puedeCancelar
         : nuevoEstado === "COMPLETADO"
           ? puedeCompletar
-          : ["ACEPTADO", "RECHAZADO"].includes(nuevoEstado) &&
-            puedeAceptarORechazar;
+          : ["ACEPTADO", "RECHAZADO"].includes(
+                nuevoEstado
+              ) && puedeAceptarORechazar;
 
     if (!permitido) return;
 
@@ -331,15 +650,13 @@ export default function IntercambiosPage() {
       setError("");
       setMensaje("");
 
-      await sincronizarStock(seleccionado, nuevoEstado);
-
-      const actualizado = await cambiarEstadoIntercambio(
-        seleccionado.id,
-        nuevoEstado
-      );
+      const actualizado =
+        await cambiarEstadoIntercambio(
+          seleccionado.id,
+          nuevoEstado
+        );
 
       setSeleccionado(actualizado);
-
       setIntercambios((actuales) =>
         actuales.map((intercambio) =>
           intercambio.id === actualizado.id
@@ -360,11 +677,13 @@ export default function IntercambiosPage() {
     } catch (err) {
       console.error(err);
       setError(
-        err?.status === 404 && nuevoEstado === "COMPLETADO"
-          ? "Este intercambio no tiene stock reservado (es anterior al sistema de reservas). Cancelalo y volvé a proponerlo."
-          : [400, 403, 409].includes(err?.status)
-            ? err.message
-            : "No fue posible actualizar el estado del intercambio."
+        err?.status === 404 &&
+        nuevoEstado === "COMPLETADO"
+          ? "Este intercambio no tiene stock reservado. Cancelalo y volvé a proponerlo."
+          : obtenerMensajeError(
+              err,
+              "No fue posible actualizar el estado del intercambio."
+            )
       );
     } finally {
       setActualizandoEstado(false);
@@ -372,7 +691,13 @@ export default function IntercambiosPage() {
   }
 
   async function handleEliminar() {
-    if (!seleccionado || eliminando || !esAdmin) return;
+    if (
+      !seleccionado ||
+      eliminando ||
+      !esAdmin
+    ) {
+      return;
+    }
 
     try {
       setEliminando(true);
@@ -381,17 +706,23 @@ export default function IntercambiosPage() {
 
       await eliminarIntercambio(seleccionado.id);
 
-      const restantes = intercambios.filter(
-        (intercambio) => intercambio.id !== seleccionado.id
+      setIntercambios((actuales) =>
+        actuales.filter(
+          (intercambio) =>
+            intercambio.id !== seleccionado.id
+        )
       );
 
-      setIntercambios(restantes);
       setSeleccionado(null);
       setModalEliminar(false);
-      setMensaje("El intercambio fue eliminado correctamente.");
+      setMensaje(
+        "El intercambio fue eliminado correctamente."
+      );
     } catch (err) {
       console.error(err);
-      setError("No fue posible eliminar el intercambio.");
+      setError(
+        "No fue posible eliminar el intercambio."
+      );
       setModalEliminar(false);
     } finally {
       setEliminando(false);
@@ -403,9 +734,12 @@ export default function IntercambiosPage() {
   }
 
   function obtenerPagador(intercambio) {
-    const idPagador = intercambio.usuarioPagaDiferencia;
+    const idPagador =
+      intercambio.usuarioPagaDiferencia;
 
-    if (idPagador == null) return "No especificado";
+    if (idPagador == null) {
+      return "No especificado";
+    }
 
     if (
       Number(idPagador) ===
@@ -425,7 +759,11 @@ export default function IntercambiosPage() {
   }
 
   function seleccionarIntercambio(intercambio) {
+    edicionVersion.current++;
     setSeleccionado(intercambio);
+    setEditando(false);
+    setFormEdicion(null);
+    setCargandoEdicion(false);
     setMensaje("");
     setError("");
   }
@@ -479,9 +817,11 @@ export default function IntercambiosPage() {
             if (
               !modalEliminar &&
               !actualizandoEstado &&
+              !guardandoEdicion &&
               !eliminando
             ) {
               setSeleccionado(null);
+              cancelarEdicion();
             }
           }}
           maxWidth="max-w-3xl"
@@ -493,7 +833,9 @@ export default function IntercambiosPage() {
               </h2>
               <p className="mt-1 text-sm text-[#6B7280]">
                 Propuesta realizada el{" "}
-                {formatearFecha(seleccionado.fechaCreacion)}
+                {formatearFecha(
+                  seleccionado.fechaCreacion
+                )}
               </p>
             </div>
 
@@ -516,43 +858,246 @@ export default function IntercambiosPage() {
                 <dd className="mt-1">
                   <Badge
                     variant={
-                      variantesEstado[seleccionado.estado] ??
-                      "neutral"
+                      variantesEstado[
+                        seleccionado.estado
+                      ] ?? "neutral"
                     }
                   >
-                    {formatearEstado(seleccionado.estado)}
+                    {formatearEstado(
+                      seleccionado.estado
+                    )}
                   </Badge>
                 </dd>
               </div>
             </dl>
 
+            {/* EDICIÓN */}
+            {editando && formEdicion && (
+              <div className="mb-6 space-y-4 rounded-lg border border-[#ECEEF2] p-4">
+                <h3 className="font-semibold text-[#1F2937]">
+                  Editar propuesta
+                </h3>
+
+                <p className="text-sm text-[#6B7280]">
+                  Podés cambiar las cantidades, pero no agregar ni quitar productos.
+                </p>
+
+                {formEdicion.detalles.map(
+                  (detalle, index) => (
+                    <div
+                      key={`${detalle.tipoMovimiento}-${detalle.idProducto}`}
+                      className="flex items-center justify-between gap-4"
+                    >
+                      <div className="text-sm">
+                        <p className="font-medium text-[#1F2937]">
+                          {seleccionado.detalles[index]
+                            ?.nombreProductoSnapshot ||
+                            datosProductos[
+                              detalle.idProducto
+                            ]?.nombre ||
+                            "Producto"}
+                        </p>
+
+                        <p className="text-[#6B7280]">
+                          {mostrarTipoMovimiento(
+                            detalle.tipoMovimiento
+                          )}
+                        </p>
+                      </div>
+
+                      <input
+                        type="number"
+                        min="1"
+                        max={detalle.maxCantidad}
+                        step="1"
+                        aria-label={`Cantidad de ${
+                          seleccionado.detalles[index]
+                            ?.nombreProductoSnapshot ||
+                          "producto"
+                        }`}
+                        value={detalle.cantidad}
+                        onKeyDown={(e) => {
+                          if (
+                            ["-", "+", ".", "e", "E"].includes(
+                              e.key
+                            )
+                          ) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onChange={(e) =>
+                          cambiarCantidad(
+                            index,
+                            e.target.value
+                          )
+                        }
+                        className="w-24 rounded-lg border border-[#D1D5DB] p-2 text-sm"
+                      />
+
+                      <span className="text-xs text-[#6B7280]">
+                        {detalle.tipoMovimiento ===
+                        "SOLICITADO"
+                          ? "Disponible"
+                          : "Stock total"}
+                        : {detalle.maxCantidad}
+                      </span>
+                    </div>
+                  )
+                )}
+
+                <Input
+                  name="diferenciaDineroEdicion"
+                  label="Diferencia en guaraníes"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={
+                    formEdicion.diferenciaDinero
+                  }
+                  onKeyDown={(e) => {
+                    if (
+                      ["-", "e", "E"].includes(e.key)
+                    ) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onChange={(e) => {
+                    const valor = e.target.value;
+
+                    if (
+                      valor !== "" &&
+                      (!/^\d*\.?\d*$/.test(valor) ||
+                        Number(valor) < 0)
+                    ) {
+                      return;
+                    }
+
+                    setFormEdicion((actual) => ({
+                      ...actual,
+                      diferenciaDinero: valor,
+                    }));
+                  }}
+                />
+
+                {Number(
+                  formEdicion.diferenciaDinero
+                ) > 0 && (
+                  <div>
+                    <label
+                      htmlFor="pagadorEdicion"
+                      className="mb-2 block text-sm font-medium"
+                    >
+                      ¿Quién paga la diferencia?
+                    </label>
+
+                    <select
+                      id="pagadorEdicion"
+                      value={
+                        formEdicion.usuarioPagaDiferencia
+                      }
+                      onChange={(e) =>
+                        setFormEdicion(
+                          (actual) => ({
+                            ...actual,
+                            usuarioPagaDiferencia:
+                              e.target.value,
+                          })
+                        )
+                      }
+                      className="w-full rounded-lg border border-[#D1D5DB] p-2 text-sm"
+                    >
+                      <option
+                        value=""
+                        disabled
+                      >
+                        Seleccionar
+                      </option>
+
+                      <option
+                        value={
+                          seleccionado.idUsuarioProponente
+                        }
+                      >
+                        Proponente:{" "}
+                        {nombreUsuario(
+                          seleccionado.idUsuarioProponente
+                        )}
+                      </option>
+
+                      <option
+                        value={
+                          seleccionado.idUsuarioReceptor
+                        }
+                      >
+                        Receptor:{" "}
+                        {nombreUsuario(
+                          seleccionado.idUsuarioReceptor
+                        )}
+                      </option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    disabled={guardandoEdicion}
+                    onClick={cancelarEdicion}
+                  >
+                    Volver
+                  </Button>
+
+                  <Button
+                    loading={guardandoEdicion}
+                    disabled={guardandoEdicion}
+                    onClick={guardarEdicion}
+                  >
+                    Guardar cambios
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* TABLA DE PRODUCTOS */}
             <div className="overflow-hidden rounded-lg border border-[#ECEEF2]">
               <Table
                 columns={[
-                  { key: "producto", label: "PRODUCTO" },
-                  { key: "movimiento", label: "TIPO" },
-                  { key: "cantidad", label: "CANTIDAD" },
+                  {
+                    key: "producto",
+                    label: "PRODUCTO",
+                  },
+                  {
+                    key: "movimiento",
+                    label: "TIPO",
+                  },
+                  {
+                    key: "cantidad",
+                    label: "CANTIDAD",
+                  },
                   {
                     key: "precio",
                     label: "PRECIO U.",
                     className: "text-right",
                   },
                 ]}
-                data={seleccionado.detalles ?? []}
+                data={
+                  seleccionado.detalles ?? []
+                }
                 emptyMessage="Este intercambio no tiene productos."
                 renderRow={(detalle) => (
                   <>
                     <td className="px-4 py-3 font-semibold text-[#1F2937]">
                       {detalle.nombreProductoSnapshot ||
-                        datosProductos[detalle.idProducto]?.nombre ||
+                        datosProductos[
+                          detalle.idProducto
+                        ]?.nombre ||
                         "Producto"}
                     </td>
 
                     <td className="px-4 py-3 text-[#4B5563]">
-                      {detalle.tipoMovimiento === "SOLICITADO"
-                        ? "Solicitado"
-                        : "Ofrecido"}
+                      {mostrarTipoMovimiento(
+                        detalle.tipoMovimiento
+                      )}
                     </td>
 
                     <td className="px-4 py-3 text-[#4B5563]">
@@ -560,12 +1105,14 @@ export default function IntercambiosPage() {
                     </td>
 
                     <td className="px-4 py-3 text-right text-[#4B5563]">
-                      {datosProductos[detalle.idProducto]
-                        ?.precioReferencia == null
+                      {datosProductos[
+                        detalle.idProducto
+                      ]?.precioReferencia == null
                         ? "-"
                         : formatearDinero(
-                            datosProductos[detalle.idProducto]
-                              .precioReferencia
+                            datosProductos[
+                              detalle.idProducto
+                            ].precioReferencia
                           )}
                     </td>
                   </>
@@ -573,31 +1120,66 @@ export default function IntercambiosPage() {
               />
             </div>
 
-            {/* TOTALES DE REFERENCIA POR TIPO DE MOVIMIENTO */}
-            {seleccionado.detalles?.length > 0 && (
+            {/* TOTALES */}
+            {seleccionado.detalles?.length >
+              0 && (
               <div className="mt-4 space-y-2 rounded-lg bg-[#F9FAFB] p-4 text-sm">
-                {["SOLICITADO", "OFRECIDO"].map((tipo) => {
-                  const detalles = seleccionado.detalles.filter(
-                    (detalle) => detalle.tipoMovimiento === tipo
-                  );
-                  if (!detalles.length) return null;
-                  const sinPrecio = detalles.some(
-                    (detalle) => datosProductos[detalle.idProducto]?.precioReferencia == null
-                  );
-                  const total = detalles.reduce(
-                    (suma, detalle) =>
-                      suma +
-                      Number(datosProductos[detalle.idProducto]?.precioReferencia ?? 0) *
-                        Number(detalle.cantidad ?? 0),
-                    0
-                  );
+                {[
+                  "SOLICITADO",
+                  "OFRECIDO",
+                ].map((tipo) => {
+                  const detalles =
+                    seleccionado.detalles.filter(
+                      (detalle) =>
+                        detalle.tipoMovimiento ===
+                        tipo
+                    );
+
+                  if (!detalles.length) {
+                    return null;
+                  }
+
+                  const sinPrecio =
+                    detalles.some(
+                      (detalle) =>
+                        datosProductos[
+                          detalle.idProducto
+                        ]?.precioReferencia == null
+                    );
+
+                  const total =
+                    detalles.reduce(
+                      (suma, detalle) =>
+                        suma +
+                        Number(
+                          datosProductos[
+                            detalle.idProducto
+                          ]?.precioReferencia ?? 0
+                        ) *
+                          Number(
+                            detalle.cantidad ?? 0
+                          ),
+                      0
+                    );
+
                   return (
-                    <div key={tipo} className="flex justify-between gap-4">
+                    <div
+                      key={tipo}
+                      className="flex justify-between gap-4"
+                    >
                       <span className="text-[#4B5563]">
-                        Total de referencia {tipo === "SOLICITADO" ? "solicitado" : "ofrecido"}
+                        Total de referencia{" "}
+                        {mostrarTipoMovimiento(
+                          tipo
+                        ).toLowerCase()}
                       </span>
+
                       <strong className="text-[#1F2937]">
-                        {sinPrecio ? "No disponible" : formatearDinero(total)}
+                        {sinPrecio
+                          ? "No disponible"
+                          : formatearDinero(
+                              total
+                            )}
                       </strong>
                     </div>
                   );
@@ -605,20 +1187,30 @@ export default function IntercambiosPage() {
               </div>
             )}
 
-            {/* COMPENSACIÓN ECONÓMICA */}
+            {/* COMPENSACIÓN */}
             <dl className="ml-auto mt-5 w-full max-w-sm space-y-3 text-sm">
               <div className="flex justify-between gap-4 text-[#4B5563]">
-                <dt>Compensación económica</dt>
+                <dt>
+                  Compensación económica
+                </dt>
                 <dd className="font-bold text-[#1F2937]">
-                  {formatearDinero(seleccionado.diferenciaDinero)}
+                  {formatearDinero(
+                    seleccionado.diferenciaDinero
+                  )}
                 </dd>
               </div>
 
-              {Number(seleccionado.diferenciaDinero) > 0 && (
+              {Number(
+                seleccionado.diferenciaDinero
+              ) > 0 && (
                 <div className="flex justify-between gap-4 text-[#4B5563]">
-                  <dt>Paga la diferencia</dt>
+                  <dt>
+                    Paga la diferencia
+                  </dt>
                   <dd className="text-right">
-                    {obtenerPagador(seleccionado)}
+                    {obtenerPagador(
+                      seleccionado
+                    )}
                   </dd>
                 </div>
               )}
@@ -626,63 +1218,113 @@ export default function IntercambiosPage() {
 
             {/* ACCIONES */}
             {(puedeAceptarORechazar ||
+              puedeEditar ||
               puedeCancelar ||
               puedeCompletar) && (
               <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-[#ECEEF2] pt-5">
-                {puedeAceptarORechazar && (
-                  <>
+                {puedeEditar &&
+                  !editando && (
                     <Button
-                      variant="success"
-                      loading={actualizandoEstado}
-                      onClick={() => cambiarEstado("ACEPTADO")}
+                      variant="outline"
+                      loading={cargandoEdicion}
+                      disabled={
+                        actualizandoEstado ||
+                        cargandoEdicion
+                      }
+                      onClick={
+                        iniciarEdicion
+                      }
                     >
-                      Aceptar
+                      Editar
                     </Button>
+                  )}
 
+                {puedeAceptarORechazar &&
+                  !editando && (
+                    <>
+                      <Button
+                        variant="success"
+                        loading={
+                          actualizandoEstado
+                        }
+                        onClick={() =>
+                          cambiarEstado(
+                            "ACEPTADO"
+                          )
+                        }
+                      >
+                        Aceptar
+                      </Button>
+
+                      <Button
+                        variant="outlineDanger"
+                        disabled={
+                          actualizandoEstado
+                        }
+                        onClick={() =>
+                          cambiarEstado(
+                            "RECHAZADO"
+                          )
+                        }
+                      >
+                        Rechazar
+                      </Button>
+                    </>
+                  )}
+
+                {puedeCancelar &&
+                  !editando && (
                     <Button
                       variant="outlineDanger"
-                      disabled={actualizandoEstado}
-                      onClick={() => cambiarEstado("RECHAZADO")}
+                      disabled={
+                        actualizandoEstado
+                      }
+                      onClick={() =>
+                        cambiarEstado(
+                          "CANCELADO"
+                        )
+                      }
                     >
-                      Rechazar
+                      Cancelar
                     </Button>
-                  </>
-                )}
+                  )}
 
-                {puedeCancelar && (
+                {puedeCompletar &&
+                  !editando && (
+                    <Button
+                      variant="success"
+                      loading={
+                        actualizandoEstado
+                      }
+                      onClick={() =>
+                        cambiarEstado(
+                          "COMPLETADO"
+                        )
+                      }
+                    >
+                      Completado
+                    </Button>
+                  )}
+              </div>
+            )}
+
+            {esAdmin &&
+              !editando && (
+                <div className="mt-5 flex justify-end">
                   <Button
+                    type="button"
                     variant="outlineDanger"
-                    disabled={actualizandoEstado}
-                    onClick={() => cambiarEstado("CANCELADO")}
+                    loading={
+                      eliminando
+                    }
+                    onClick={() =>
+                      setModalEliminar(true)
+                    }
                   >
-                    Cancelar
+                    Eliminar
                   </Button>
-                )}
-
-                {puedeCompletar && (
-                  <Button
-                    variant="success"
-                    loading={actualizandoEstado}
-                    onClick={() => cambiarEstado("COMPLETADO")}
-                  >
-                    Completado
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {esAdmin && (
-              <div className="mt-5 flex justify-end">
-                <Button
-                  type="button"
-                  variant="outlineDanger"
-                  loading={eliminando}
-                  onClick={() => setModalEliminar(true)}
-                >
-                  Eliminar
-                </Button>
-              </div>
-            )}
+                </div>
+              )}
           </Card>
         </FormOverlay>
       )}
@@ -700,7 +1342,9 @@ export default function IntercambiosPage() {
               name="busqueda"
               value={busqueda}
               onChange={(event) => {
-                setBusqueda(event.target.value);
+                setBusqueda(
+                  event.target.value
+                );
                 setPagina(0);
               }}
               placeholder="Buscar por publicación..."
@@ -711,19 +1355,31 @@ export default function IntercambiosPage() {
           <select
             value={filtroEstado}
             onChange={(event) => {
-              setFiltroEstado(event.target.value);
+              setFiltroEstado(
+                event.target.value
+              );
               setPagina(0);
             }}
             className="h-[46px] w-full rounded-lg border border-[#D1D5DB] bg-white px-4 text-sm text-[#111827] sm:w-[260px]"
           >
-            <option value="" className="text-gray-400">
+            <option value="">
               Todos los estados
             </option>
-            <option value="PROPUESTO">Propuesto</option>
-            <option value="ACEPTADO">Aceptado</option>
-            <option value="RECHAZADO">Rechazado</option>
-            <option value="CANCELADO">Cancelado</option>
-            <option value="COMPLETADO">Completado</option>
+            <option value="PROPUESTO">
+              Propuesto
+            </option>
+            <option value="ACEPTADO">
+              Aceptado
+            </option>
+            <option value="RECHAZADO">
+              Rechazado
+            </option>
+            <option value="CANCELADO">
+              Cancelado
+            </option>
+            <option value="COMPLETADO">
+              Completado
+            </option>
           </select>
         </div>
 
@@ -733,20 +1389,29 @@ export default function IntercambiosPage() {
             name="fechaDesde"
             type="date"
             value={fechaDesde}
-            max={fechaHasta || undefined}
+            max={
+              fechaHasta || undefined
+            }
             onChange={(event) => {
-              setFechaDesde(event.target.value);
+              setFechaDesde(
+                event.target.value
+              );
               setPagina(0);
             }}
           />
+
           <Input
             label="Fecha hasta"
             name="fechaHasta"
             type="date"
             value={fechaHasta}
-            min={fechaDesde || undefined}
+            min={
+              fechaDesde || undefined
+            }
             onChange={(event) => {
-              setFechaHasta(event.target.value);
+              setFechaHasta(
+                event.target.value
+              );
               setPagina(0);
             }}
           />
@@ -779,8 +1444,9 @@ export default function IntercambiosPage() {
               ) : (
                 <td className="px-4 py-4 text-[#4B5563]">
                   {nombreUsuario(
-                    Number(intercambio.idUsuarioProponente) ===
-                      Number(usuarioId)
+                    Number(
+                      intercambio.idUsuarioProponente
+                    ) === Number(usuarioId)
                       ? intercambio.idUsuarioReceptor
                       : intercambio.idUsuarioProponente
                   )}
@@ -795,17 +1461,22 @@ export default function IntercambiosPage() {
               <td className="px-4 py-4">
                 <Badge
                   variant={
-                    variantesEstado[intercambio.estado] ??
-                    "neutral"
+                    variantesEstado[
+                      intercambio.estado
+                    ] ?? "neutral"
                   }
                   size="sm"
                 >
-                  {formatearEstado(intercambio.estado)}
+                  {formatearEstado(
+                    intercambio.estado
+                  )}
                 </Badge>
               </td>
 
               <td className="px-4 py-4 text-[#6B7280]">
-                {formatearFecha(intercambio.fechaCreacion)}
+                {formatearFecha(
+                  intercambio.fechaCreacion
+                )}
               </td>
 
               <td className="px-4 py-4">
@@ -814,7 +1485,9 @@ export default function IntercambiosPage() {
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      seleccionarIntercambio(intercambio)
+                      seleccionarIntercambio(
+                        intercambio
+                      )
                     }
                   >
                     Ver detalle
@@ -829,8 +1502,12 @@ export default function IntercambiosPage() {
           <Pagination
             currentPage={pagina + 1}
             totalPages={totalPaginas}
-            onPageChange={(nuevaPagina) =>
-              setPagina(nuevaPagina - 1)
+            onPageChange={(
+              nuevaPagina
+            ) =>
+              setPagina(
+                nuevaPagina - 1
+              )
             }
           />
         </div>
@@ -839,7 +1516,9 @@ export default function IntercambiosPage() {
       <ConfirmDeleteModal
         isOpen={modalEliminar}
         onClose={() => {
-          if (!eliminando) setModalEliminar(false);
+          if (!eliminando) {
+            setModalEliminar(false);
+          }
         }}
         onConfirm={handleEliminar}
         elemento="el intercambio"

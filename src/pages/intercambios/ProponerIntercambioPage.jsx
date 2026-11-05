@@ -10,12 +10,11 @@ import MultiSelect from "../../components/common/MultiSelect";
 import NuevoProductoPage from "../vendedor/NuevoProductoPage";
 
 import {
-  ORIGEN_RESERVA,
-  reservarStock,
   obtenerPublicacion,
   obtenerProductos,
 } from "../../services/catalogoService";
-import { cambiarEstadoIntercambio, crearIntercambio } from "../../services/intercambiosService";
+
+import { crearIntercambio } from "../../services/intercambiosService";
 
 function dinero(valor) {
   if (valor == null) return "Sin precio";
@@ -251,24 +250,7 @@ export default function ProponerIntercambioPage({ usuarioId }) {
 
     try {
       setGuardando(true);
-      const creado = await crearIntercambio(datos);
-
-      // Aparta lo que ofrezco para que no lo venda mientras el receptor responde.
-      // Si no hay stock libre, la propuesta se cancela para no dejarla sin respaldo.
-      try {
-        await reservarStock(
-          ORIGEN_RESERVA.INTERCAMBIO,
-          creado.id,
-          ofrecidos.map((producto) => ({
-            idProducto: Number(producto.id),
-            cantidad: Number(producto.cantidad),
-            idUsuarioDestino: Number(publicacion.idVendedor),
-          }))
-        );
-      } catch (err) {
-        await cambiarEstadoIntercambio(creado.id, "CANCELADO").catch(() => {});
-        throw err;
-      }
+       await crearIntercambio(datos);
 
       navigate("/intercambios");
     } catch (err) {
