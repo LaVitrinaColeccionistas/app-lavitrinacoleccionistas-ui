@@ -206,6 +206,9 @@ export default function IntercambiosPage() {
   ]);
 
   useEffect(() => {
+    // Espera a que termine la carga crítica (listado + nombres) para no competir por conexiones
+    if (cargando) return;
+
     const ids = [
       ...new Set(
         intercambios.flatMap((intercambio) =>
@@ -253,7 +256,7 @@ export default function IntercambiosPage() {
     }
 
     cargarProductos();
-  }, [intercambios]);
+  }, [intercambios, cargando]);
 
   const esReceptor = seleccionado != null && usuarioId != null &&
     Number(usuarioId) === Number(seleccionado.idUsuarioReceptor);
