@@ -206,7 +206,6 @@ export default function IntercambiosPage() {
   ]);
 
   useEffect(() => {
-    // Espera a que termine la carga crítica (listado + nombres) para no competir por conexiones
     if (cargando) return;
 
     const ids = [
