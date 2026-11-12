@@ -8,7 +8,7 @@ import Alert from "../../components/common/Alert";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { obtenerPublicaciones } from "../../services/catalogoService";
-import { agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
+import { AVISO_OTRO_VENDEDOR, OTRO_VENDEDOR, agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
 import { precioPrincipal } from "../../utils/precios";
 const TAMANO_PAGINA = 9;
 
@@ -107,6 +107,10 @@ export default function CatalogoPage() {
     }
 
     const agregados = agregarAlCarrito(usuarioId, entradasDePublicacion(card.publicacion));
+    if (agregados === OTRO_VENDEDOR) {
+      setAvisoCarrito({ variant: "warning", texto: AVISO_OTRO_VENDEDOR });
+      return;
+    }
     setAvisoCarrito(
       agregados > 0
         ? { variant: "success", texto: `"${card.nombre}" se agregó a tu carrito.` }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import Alert from "../../components/common/Alert";
@@ -10,8 +10,8 @@ import Input from "../../components/common/Input";
 import Pagination from "../../components/common/Pagination";
 import Select from "../../components/common/Select";
 import Table from "../../components/common/Table";
-import Textarea from "../../components/common/Textarea";
 import { useAuth } from "../../context/AuthContext";
+import useDebouncedValue from "../../hooks/useDebouncedValue";
 import useNombres from "../../hooks/useNombres";
 import {
   ORIGEN_RESERVA,
@@ -60,7 +60,6 @@ export default function OfertasPage() {
   // Formulario
   const [pub, setPub] = useState(null);
   const [monto, setMonto] = useState("");
-  const [mensaje, setMensaje] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [errorForm, setErrorForm] = useState("");
   const [exito, setExito] = useState("");
@@ -70,7 +69,10 @@ export default function OfertasPage() {
   const [cargando, setCargando] = useState(true);
   const [errorLista, setErrorLista] = useState("");
   const [filtros, setFiltros] = useState(filtrosVacios);
+  const filtrosAplicados = useDebouncedValue(filtros);
   const [pagina, setPagina] = useState(0);
+  const [totalPaginas, setTotalPaginas] = useState(0);
+  const pedido = useRef(0); // solo se aplica la respuesta del último pedido
 
   const nombreDe = useNombres(ofertas.map((o) => o.idVendedor));
 
@@ -99,70 +101,84 @@ export default function OfertasPage() {
 
   const pubVisible = idPublicacion ? pub : null;
 
-  /* Ofertas enviadas por el comprador + datos de cada publicación */
+  /* Ofertas enviadas por el comprador (página y filtros los resuelve el servidor) + su publicación */
   const cargarOfertas = useCallback(async () => {
     if (!usuarioId) return;
+    const actual = ++pedido.current;
 
     try {
       setCargando(true);
       setErrorLista("");
 
-      const data = await obtenerOfertas({ idComprador: usuarioId, size: 100 });
+      const data = await obtenerOfertas({
+        idComprador: usuarioId,
+        page: pagina,
+        size: POR_PAGINA,
+        montoMin: filtrosAplicados.precioMin,
+        montoMax: filtrosAplicados.precioMax,
+        fechaDesde: filtrosAplicados.fechaMin,
+        fechaHasta: filtrosAplicados.fechaMax,
+      });
       const lista = data?.content ?? [];
 
       const ids = [...new Set(lista.map((o) => o.idPublicacion))];
-      const pubs = await Promise.all(
-        ids.map((id) => obtenerPublicacion(id).catch(() => null))
-      );
+      // La oferta sigue ACEPTADA después de pagarla: lo que dice si aún se puede pagar es su reserva.
+      // RESERVADA = pendiente de pago; sin reservas = ya pasó a una orden; LIBERADA = venció.
+      const [pubs, reservasAceptadas] = await Promise.all([
+        Promise.all(ids.map((id) => obtenerPublicacion(id).catch(() => null))),
+        Promise.all(
+          lista
+            .filter((o) => o.estadoOferta === "ACEPTADA")
+            .map((o) =>
+              obtenerReservas(ORIGEN_RESERVA.OFERTA, o.id)
+                .then((rs) => [o.id, rs ?? []])
+                .catch(() => [o.id, null])
+            )
+        ),
+      ]);
+      if (actual !== pedido.current) return;
+      const reservasDe = new Map(reservasAceptadas);
+      const pagoDe = (o) => {
+        if (o.estadoOferta !== "ACEPTADA") return null;
+        const rs = reservasDe.get(o.id);
+        if (rs == null) return "PENDIENTE"; // no se pudo consultar: se valida al pagar
+        if (rs.some((r) => r.estadoReserva === "RESERVADA")) return "PENDIENTE";
+        return rs.length === 0 ? "EN_COMPRAS" : "VENCIDA";
+      };
+
       const porId = Object.fromEntries(
         pubs.filter(Boolean).map((p) => [p.id, p])
       );
 
+      setTotalPaginas(data?.totalPages ?? 0);
       setOfertas(
-        lista
-          .map((o) => ({
-            ...o,
-            idVendedor: porId[o.idPublicacion]?.idVendedor,
-            titulo: porId[o.idPublicacion]?.titulo ?? `Publicación #${o.idPublicacion}`,
-            imagen: imagenDePublicacion(porId[o.idPublicacion]),
-            valorLote: precioTotal(porId[o.idPublicacion]),
-          }))
-          .sort((a, b) => new Date(b.fechaOferta) - new Date(a.fechaOferta))
+        lista.map((o) => ({
+          ...o,
+          pago: pagoDe(o),
+          idVendedor: porId[o.idPublicacion]?.idVendedor,
+          titulo: porId[o.idPublicacion]?.titulo ?? "Publicación no disponible",
+          imagen: imagenDePublicacion(porId[o.idPublicacion]),
+          valorLote: precioTotal(porId[o.idPublicacion]),
+        }))
       );
     } catch (err) {
+      if (actual !== pedido.current) return;
       console.error(err);
       setErrorLista(err.message || "No fue posible cargar tus ofertas.");
     } finally {
-      setCargando(false);
+      if (actual === pedido.current) setCargando(false);
     }
-  }, [usuarioId]);
+  }, [usuarioId, pagina, filtrosAplicados]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargarOfertas(); }, [cargarOfertas]);
 
-  /* Filtros (se aplican en el navegador: el backend no los ofrece) */
-  const filtradas = useMemo(
-    () =>
-      ofertas.filter((o) => {
-        const valor = Number(o.montoOfertado);
-        const fecha = dia(o.fechaOferta);
-
-        if (filtros.precioMin !== "" && valor < Number(filtros.precioMin)) return false;
-        if (filtros.precioMax !== "" && valor > Number(filtros.precioMax)) return false;
-        if (filtros.fechaMin && fecha < filtros.fechaMin) return false;
-        if (filtros.fechaMax && fecha > filtros.fechaMax) return false;
-        return true;
-      }),
-    [ofertas, filtros]
-  );
+  const hayFiltros = Object.values(filtros).some((v) => v !== "");
 
   const cambiarFiltro = (e) => {
     setFiltros((f) => ({ ...f, [e.target.name]: e.target.value }));
     setPagina(0);
   };
-
-  const totalPaginas = Math.ceil(filtradas.length / POR_PAGINA);
-  const visibles = filtradas.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA);
 
   /* Envío de la oferta */
   const handleSubmit = async (e) => {
@@ -197,15 +213,14 @@ export default function OfertasPage() {
         idPublicacion: pubVisible.id,
         idComprador: usuarioId,
         montoOfertado: valor,
-        ...(mensaje.trim() && { mensaje: mensaje.trim() }),
       });
 
       setExito("Oferta enviada. El vendedor la evaluará.");
       setMonto("");
-      setMensaje("");
       setPub(null);
       setSearchParams({}, { replace: true });
-      await cargarOfertas();
+      if (pagina === 0) await cargarOfertas();
+      else setPagina(0);
     } catch (err) {
       setErrorForm(err.message || "No fue posible enviar la oferta.");
     } finally {
@@ -224,10 +239,13 @@ export default function OfertasPage() {
       setPagando(true);
       setErrorLista("");
 
-      const reservas = (await obtenerReservas(ORIGEN_RESERVA.OFERTA, aPagar.id))
-        .filter((r) => r.estadoReserva === "RESERVADA");
+      const todas = await obtenerReservas(ORIGEN_RESERVA.OFERTA, aPagar.id);
+      const reservas = todas.filter((r) => r.estadoReserva === "RESERVADA");
       if (!reservas.length) {
-        throw Object.assign(new Error("La reserva de esta oferta venció."), { status: 409 });
+        const mensaje = todas.length
+          ? "La reserva de esta oferta venció."
+          : "Esta oferta ya tiene una compra registrada. Revisala en Mis compras.";
+        throw Object.assign(new Error(mensaje), { status: 409 });
       }
 
       const orden = await crearOrden({
@@ -341,17 +359,6 @@ export default function OfertasPage() {
               </p>
             )}
 
-            <Textarea
-              label="Mensaje Opcional para el vendedor"
-              name="mensaje"
-              rows={4}
-              maxLength={500}
-              placeholder="Ej.: Hola, me interesa mucho. ¿Podemos coordinar para esta semana?"
-              value={mensaje}
-              onChange={(e) => setMensaje(e.target.value)}
-              disabled={!pubVisible}
-            />
-
             <Button type="submit" fullWidth loading={enviando} disabled={!pubVisible}>
               Enviar Oferta y Confirmar
             </Button>
@@ -397,9 +404,9 @@ export default function OfertasPage() {
           ) : (
             <Table
               columns={columnas}
-              data={visibles}
+              data={ofertas}
               emptyMessage={
-                ofertas.length ? "Ninguna oferta coincide con los filtros." : "Todavía no enviaste ofertas."
+                hayFiltros ? "Ninguna oferta coincide con los filtros." : "Todavía no enviaste ofertas."
               }
               renderRow={(o) => (
                 <>
@@ -410,7 +417,7 @@ export default function OfertasPage() {
                     </div>
                   </td>
                   <td className="px-4 py-4 text-[#4B5563]">
-                    {o.idVendedor != null ? nombreDe(o.idVendedor, `Vendedor #${o.idVendedor}`) : "-"}
+                    {o.idVendedor != null ? nombreDe(o.idVendedor, "Vendedor") : "-"}
                   </td>
                   <td className="px-4 py-4">
                     <span className="font-bold text-[#1F2937]">{formatearDinero(o.montoOfertado)}</span>
@@ -429,10 +436,16 @@ export default function OfertasPage() {
                     {formatearFecha(o.fechaOferta)}
                   </td>
                   <td className="px-4 py-4 text-right">
-                    {o.estadoOferta === "ACEPTADA" && (
+                    {o.pago === "PENDIENTE" && (
                       <Button size="sm" variant="success" onClick={() => setAPagar(o)}>
                         Pagar
                       </Button>
+                    )}
+                    {o.pago === "EN_COMPRAS" && (
+                      <span className="text-xs font-medium text-[#6B7280]">Compra registrada</span>
+                    )}
+                    {o.pago === "VENCIDA" && (
+                      <span className="text-xs font-medium text-[#DC2626]">Reserva vencida</span>
                     )}
                   </td>
                 </>

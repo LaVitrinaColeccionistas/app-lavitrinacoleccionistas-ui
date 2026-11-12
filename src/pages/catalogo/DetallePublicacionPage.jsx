@@ -8,7 +8,7 @@ import Breadcrumb from "../../components/layout/Breadcrumb";
 import Button from "../../components/common/Button";
 import { useAuth } from "../../context/AuthContext";
 import { obtenerPublicacion } from "../../services/catalogoService";
-import { agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
+import { AVISO_OTRO_VENDEDOR, OTRO_VENDEDOR, agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
 import { formatearDinero } from "../vendedor/opciones";
 import { esOfertable, precioPrincipal, precioTotal } from "../../utils/precios";
 import useNombres from "../../hooks/useNombres";
@@ -66,7 +66,7 @@ export default function DetallePublicacionPage() {
   const principal = detalles[0]?.producto ?? {};
 
   const nombreDe = useNombres([pub?.idVendedor]);
-  const nombreVendedor = nombreDe(pub?.idVendedor, `Vendedor #${pub?.idVendedor}`);
+  const nombreVendedor = nombreDe(pub?.idVendedor, "Vendedor");
 
   // Una imagen por producto de la publicación (el backend solo guarda urlImagen por producto)
   const imagenes = useMemo(
@@ -110,6 +110,10 @@ export default function DetallePublicacionPage() {
   const agregarCarrito = () =>
     requerirSesion(() => {
       const agregados = agregarAlCarrito(usuarioId, entradasDePublicacion(pub));
+      if (agregados === OTRO_VENDEDOR) {
+        setAvisoCarrito({ variant: "warning", texto: AVISO_OTRO_VENDEDOR });
+        return;
+      }
       setAvisoCarrito(
         agregados > 0
           ? { variant: "success", texto: "Se agregó a tu carrito." }
@@ -119,7 +123,10 @@ export default function DetallePublicacionPage() {
 
   const comprarAhora = () =>
     requerirSesion(() => {
-      agregarAlCarrito(usuarioId, entradasDePublicacion(pub));
+      if (agregarAlCarrito(usuarioId, entradasDePublicacion(pub)) === OTRO_VENDEDOR) {
+        setAvisoCarrito({ variant: "warning", texto: AVISO_OTRO_VENDEDOR });
+        return;
+      }
       navigate("/carrito");
     });
 
@@ -231,7 +238,7 @@ export default function DetallePublicacionPage() {
           <div className="mt-3">
             {etiquetaPrecio && (
               <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
-                {etiquetaPrecio === "Lote" ? "Valor de referencia del lote" : "Desde"}
+                {etiquetaPrecio === "Lote" ? "Valor de referencia del lote" : "Productos desde"}
               </p>
             )}
             <p className="text-3xl font-bold text-[#5146E5]">{precio}</p>

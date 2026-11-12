@@ -48,6 +48,12 @@ export default function Navbar({ onNotifications }) {
     ? [...links, { label: "Configuración", to: "/admin/solicitudes" }]
     : links;
 
+  const esVendedor = tieneRol("VENDEDOR");
+
+  const colorLink = esVendedor
+    ? { activo: "text-[#92400E]", normal: "text-[#4B5563] hover:text-[#92400E]" }
+    : { activo: "text-[#5146E5]", normal: "text-[#4B5563] hover:text-[#5146E5]" };
+      
   function handleLogout() {
     cerrarSesion();
     navigate("/login", { replace: true });
@@ -130,11 +136,7 @@ export default function Navbar({ onNotifications }) {
                   text-sm
                   font-medium
                   transition-colors
-                  ${
-                    active
-                      ? "text-[#5146E5]"
-                      : "text-[#4B5563] hover:text-[#5146E5]"
-                  }
+                  ${active ? colorLink.activo : colorLink.normal}
                 `}
               >
                 {link.label}

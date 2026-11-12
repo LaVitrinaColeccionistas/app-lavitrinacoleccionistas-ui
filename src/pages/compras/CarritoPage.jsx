@@ -14,7 +14,8 @@ import { useAuth } from "../../context/AuthContext";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
 import { ORIGEN_RESERVA, reservarStock, obtenerPublicacion, obtenerPublicaciones } from "../../services/catalogoService";
 import { actualizarEstadoOrden, actualizarOrden, cancelarOrden, crearOrden, obtenerOrden } from "../../services/comprasService";
-import { HORAS_DE_VIGENCIA, guardarCarrito, leerCarrito } from "../../utils/carrito";
+import useNombres from "../../hooks/useNombres";
+import { HORAS_DE_VIGENCIA, guardarCarrito, leerCarrito, vendedorDe } from "../../utils/carrito";
 import { ApiError } from "../../services/api";
 import { resolverError } from "../../utils/errores";
 import { METODOS_PAGO, formatearDinero, imagenDePublicacion } from "./opciones";
@@ -46,7 +47,7 @@ async function itemsDeReserva(items) {
       (d) => String(d.producto?.id) === String(i.idProducto)
     );
     // ApiError con status: resolverError trata los errores sin status como críticos (/error)
-    if (!detalle) throw new ApiError(409, `El producto ${i.idProducto} ya no está en la publicación`);
+    if (!detalle) throw new ApiError(409, `"${i.nombre ?? "Un producto"}" ya no está en su publicación. Quitalo del carrito para continuar.`);
     return { idDetallePublicacion: detalle.id, cantidad: Number(i.cantidad) };
   });
 }
@@ -88,6 +89,11 @@ export default function CarritoPage() {
     async function cargarOrden() {
       try {
         const data = await obtenerOrden(id);
+        // El detalle de la orden no trae el vendedor: se toma de la publicación del primer ítem
+        const primera = data.detalles?.[0]?.idPublicacion;
+        const idVendedor = primera
+          ? (await obtenerPublicacion(primera).catch(() => null))?.idVendedor ?? null
+          : null;
         if (cancelado) return;
         setOrden(data);
         setMetodoPago(data.metodoPago);
@@ -96,6 +102,7 @@ export default function CarritoPage() {
           (data.detalles ?? []).map((d) => ({
             clave: `${d.idPublicacion}:${d.idProducto}`,
             idPublicacion: d.idPublicacion,
+            idVendedor,
             idProducto: d.idProducto,
             nombre: d.nombreProductoSnapshot,
             imagen: "",
@@ -152,6 +159,7 @@ export default function CarritoPage() {
       const porId = new Map(publicaciones.filter(Boolean).map((p) => [p.id, p]));
       const vigentes = [];
       let descartados = 0;
+      let deOtroVendedor = 0;
 
       guardados.forEach((g) => {
         const pub = porId.get(g.idPublicacion);
@@ -172,9 +180,16 @@ export default function CarritoPage() {
           return;
         }
 
+        // Una compra es con un solo vendedor: manda el del primer producto vigente
+        if (vigentes.length > 0 && vigentes[0].idVendedor !== pub.idVendedor) {
+          deOtroVendedor += 1;
+          return;
+        }
+
         vigentes.push({
           clave: `${pub.id}:${info.idProducto}`,
           idPublicacion: pub.id,
+          idVendedor: pub.idVendedor,
           idProducto: info.idProducto,
           nombre: info.nombre,
           imagen: info.imagen || imagenDePublicacion(pub),
@@ -185,13 +200,22 @@ export default function CarritoPage() {
       });
 
       setItems(vigentes);
+      const avisos = [];
       if (descartados > 0) {
-        setAviso(
+        avisos.push(
           descartados === 1
             ? "Se quitó 1 producto que ya no está disponible."
             : `Se quitaron ${descartados} productos que ya no están disponibles.`
         );
       }
+      if (deOtroVendedor > 0) {
+        avisos.push(
+          deOtroVendedor === 1
+            ? "Se quitó 1 producto de otro vendedor: cada compra es con un solo vendedor."
+            : `Se quitaron ${deOtroVendedor} productos de otros vendedores: cada compra es con un solo vendedor.`
+        );
+      }
+      if (avisos.length) setAviso(avisos.join(" "));
       setHidratado(true);
       setCargando(false);
     }
@@ -206,9 +230,13 @@ export default function CarritoPage() {
     if (editando || !hidratado) return;
     guardarCarrito(
       usuarioId,
-      items.map(({ idPublicacion, idProducto, cantidad }) => ({ idPublicacion, idProducto, cantidad }))
+      items.map(({ idPublicacion, idVendedor, idProducto, cantidad }) => ({ idPublicacion, idVendedor, idProducto, cantidad }))
     );
   }, [items, usuarioId, editando, hidratado]);
+
+  // Vendedor de la compra: lo fija el primer producto; el buscador solo ofrece sus publicaciones
+  const idVendedorCompra = vendedorDe(items);
+  const nombreDe = useNombres([idVendedorCompra]);
 
   useEffect(() => {
     if (!modalAbierto) return undefined;
@@ -217,7 +245,11 @@ export default function CarritoPage() {
     async function cargarPublicaciones() {
       try {
         setCargandoPublicaciones(true);
-        const data = await obtenerPublicaciones({ size: 30, busqueda: busquedaAplicada });
+        const data = await obtenerPublicaciones({
+          size: 30,
+          busqueda: busquedaAplicada,
+          idVendedor: idVendedorCompra ?? undefined,
+        });
         if (!cancelado) setPublicaciones(data?.content ?? []);
       } catch (err) {
         if (!cancelado) setErrorItem(err.message || "No se pudieron cargar las publicaciones.");
@@ -230,7 +262,7 @@ export default function CarritoPage() {
     return () => {
       cancelado = true;
     };
-  }, [modalAbierto, busquedaAplicada]);
+  }, [modalAbierto, busquedaAplicada, idVendedorCompra]);
 
   const productosDePublicacion = (publicacionElegida?.detalles ?? []).map(detalleDe);
   const productoElegido = productosDePublicacion.find(
@@ -255,6 +287,8 @@ export default function CarritoPage() {
   const agregarItem = () => {
     if (!publicacionElegida) return setErrorItem("Seleccioná una publicación");
     if (!productoElegido) return setErrorItem("Seleccioná un producto");
+    if (idVendedorCompra != null && publicacionElegida.idVendedor !== idVendedorCompra)
+      return setErrorItem("Solo podés sumar productos del mismo vendedor");
 
     const cantidad = Number(nuevoItem.cantidad);
     if (!Number.isInteger(cantidad) || cantidad < 1) return setErrorItem("La cantidad mínima es 1");
@@ -275,6 +309,7 @@ export default function CarritoPage() {
         {
           clave,
           idPublicacion: publicacionElegida.id,
+          idVendedor: publicacionElegida.idVendedor,
           idProducto: productoElegido.idProducto,
           nombre: productoElegido.nombre,
           imagen: productoElegido.imagen || imagenDePublicacion(publicacionElegida),
@@ -465,6 +500,13 @@ export default function CarritoPage() {
             </ul>
           )}
           {errors.items && <p className="mt-2 text-xs font-medium text-[#DC2626]">{errors.items}</p>}
+
+          {idVendedorCompra != null && (
+            <p className="mt-4 text-xs text-[#6B7280]">
+              Esta compra es con {nombreDe(idVendedorCompra, "un solo vendedor")}. Podés sumar productos de sus otras
+              publicaciones; para comprarle a otro vendedor, hacé una compra aparte.
+            </p>
+          )}
 
           <Button className="mt-5" variant="success" onClick={() => setModalAbierto(true)}>
             + Agregar producto

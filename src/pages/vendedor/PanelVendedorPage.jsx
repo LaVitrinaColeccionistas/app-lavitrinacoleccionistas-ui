@@ -8,6 +8,7 @@ import Card from "../../components/common/Card";
 import ConfirmActionModal from "../../components/common/ConfirmActionModal";
 import FormOverlay from "../../components/common/FormOverlay";
 import Pagination from "../../components/common/Pagination";
+import Select from "../../components/common/Select";
 import Table from "../../components/common/Table";
 import Breadcrumb from "../../components/layout/Breadcrumb";
 import {
@@ -45,6 +46,25 @@ const variantesPublicacion = { ACTIVA: "success", PAUSADA: "warning", VENDIDA: "
 
 const capitalizar = (s) => (s ? s.charAt(0) + s.slice(1).toLowerCase() : "-");
 const paginar = (lista, pagina) => lista.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA);
+
+// Listados paginados por el servidor
+const PAGINA_VACIA = { items: [], total: 0, totalPaginas: 0 };
+const paginaDe = (data) => ({
+  items: data?.content ?? [],
+  total: data?.totalElements ?? 0,
+  totalPaginas: data?.totalPages ?? 0,
+});
+// Conteo sin traer el listado: una página de 1 elemento y se lee totalElements
+const totalDe = (promesa) => promesa.then((d) => d?.totalElements ?? 0).catch(() => 0);
+
+const TODAS = "TODAS";
+const FILTRO_ESTADO_OFERTA = [
+  { value: TODAS, label: "Todos los estados" },
+  { value: "PENDIENTE", label: "Pendientes" },
+  { value: "ACEPTADA", label: "Aceptadas" },
+  { value: "RECHAZADA", label: "Rechazadas" },
+  { value: "EXPIRADA", label: "Expiradas" },
+];
 
 function Miniatura({ src, alt = "" }) {
   return src ? (
@@ -160,7 +180,7 @@ function PublicacionResumen({ id }) {
     return () => { cancelado = true; };
   }, [id]);
 
-  if (fallo) return <p className="text-sm text-[#6B7280]">La publicación #{id} fue eliminada. Los ítems vendidos se muestran arriba.</p>;
+  if (fallo) return <p className="text-sm text-[#6B7280]">La publicación fue eliminada. Los ítems vendidos se muestran arriba.</p>;
   if (!pub) return <p className="text-sm text-[#6B7280]">Cargando publicación...</p>;
 
   return (
@@ -204,91 +224,139 @@ export default function PanelVendedorPage() {
   const idVendedor = getUserId();
 
   const [tab, setTab] = useState(state?.tab ?? "ofertas");
-  const [pagina, setPagina] = useState(0); // 0-based
-  const [publicaciones, setPublicaciones] = useState([]);
-  const [ofertas, setOfertas] = useState([]);
+  // Página (0-based) de cada pestaña
+  const [paginas, setPaginas] = useState({ ofertas: 0, ordenes: 0, publicaciones: 0, productos: 0 });
+  const pagina = paginas[tab];
+  const irAPagina = (idTab, n) => setPaginas((p) => ({ ...p, [idTab]: n }));
+  const [publicaciones, setPublicaciones] = useState(PAGINA_VACIA);
+  const [ofertas, setOfertas] = useState(PAGINA_VACIA);
+  const [estadoOferta, setEstadoOferta] = useState(TODAS);
+  const [resumen, setResumen] = useState({ activas: 0, pausadas: 0, vendidas: 0, pendientes: 0 });
   const [ventas, setVentas] = useState([]);
   const [productoForm, setProductoForm] = useState(null); // null = cerrado, {} = alta, ProductoDTO = edición
   const [recargaProductos, setRecargaProductos] = useState(0);
   const [detalle, setDetalle] = useState(null); // { tipo: "oferta" | "orden", data }
   const [productos, setProductos] = useState({ items: [], total: 0, totalPaginas: 0 });
-  const [cargando, setCargando] = useState(true);
+  const [cargando, setCargando] = useState({ ofertas: true, ordenes: true, publicaciones: true });
   const [procesando, setProcesando] = useState(null); // id en acción
   const [accion, setAccion] = useState(null); // acción pendiente de confirmar en modal: { tipo, data }
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState(state?.mensaje ?? "");
 
-  const nombreDe = useNombres([...ofertas.map((o) => o.idComprador), ...ventas.map((v) => v.idComprador)]);
+  const nombreDe = useNombres([...ofertas.items.map((o) => o.idComprador), ...ventas.map((v) => v.idComprador)]);
 
-  /* Publicaciones del vendedor + ofertas recibidas en ellas */
-  const cargarNegocio = useCallback(async () => {
+  const marcarCarga = (idTab, valor) => setCargando((c) => ({ ...c, [idTab]: valor }));
+
+  /* Tarjetas de resumen: solo conteos */
+  const cargarResumen = useCallback(async () => {
+    if (!idVendedor) return;
+    const contarPubs = (estadoPublicacion) =>
+      totalDe(obtenerPublicaciones({ idVendedor, estadoPublicacion, size: 1 }));
+    const [activas, pausadas, vendidas, pendientes] = await Promise.all([
+      contarPubs("ACTIVA"),
+      contarPubs("PAUSADA"),
+      contarPubs("VENDIDA"),
+      totalDe(obtenerOfertas({ idVendedor, estadoOferta: "PENDIENTE", size: 1 })),
+    ]);
+    setResumen({ activas, pausadas, vendidas, pendientes });
+  }, [idVendedor]);
+
+  /* Ofertas recibidas: paginación del servidor + datos de la publicación de cada fila */
+  const cargarOfertas = useCallback(async () => {
     if (!idVendedor) return;
     try {
-      setCargando(true);
-      setError("");
-
-      const data = await obtenerPublicaciones({ idVendedor, size: 100, estadoPublicacion: null });
-      const pubs = (data?.content ?? []).filter((p) => p.estadoPublicacion !== "ELIMINADA");
-      setPublicaciones(pubs);
-      const idsPropios = new Set((data?.content ?? []).map((p) => p.id)); // incluye eliminadas: sus ventas siguen contando
-
-      const listas = await Promise.all(
-        pubs.map((p) =>
-          obtenerOfertas({ idPublicacion: p.id, size: 50 })
-            .then((d) =>
-              (d?.content ?? []).map((o) => ({
-                ...o,
-                tituloPublicacion: p.titulo,
-                imagen: imagenDePublicacion(p),
-                valorLote: precioTotal(p),
-              }))
-            )
-            .catch(() => [])
-        )
+      marcarCarga("ofertas", true);
+      const pag = paginaDe(
+        await obtenerOfertas({
+          idVendedor,
+          estadoOferta: estadoOferta === TODAS ? undefined : estadoOferta,
+          page: paginas.ofertas,
+          size: POR_PAGINA,
+        })
       );
-
-      const orden = { PENDIENTE: 0 };
-      setOfertas(
-        listas.flat().sort(
-          (a, b) =>
-            (orden[a.estadoOferta] ?? 1) - (orden[b.estadoOferta] ?? 1) ||
-            new Date(b.fechaOferta) - new Date(a.fechaOferta)
-        )
-      );
-
-      // Ventas: órdenes con ítems míos. Se identifican por producto (siempre es mío, aunque la
-      // publicación se haya eliminado) o por publicación (respaldo si el producto fue dado de baja).
-      try {
-        const [ords, prods] = await Promise.all([
-          obtenerOrdenes({ page: 0, size: 100 }),
-          obtenerProductos({ idVendedor, size: 100 }).catch(() => null),
-        ]);
-        const idsProductos = new Set((prods?.content ?? []).map((p) => p.id));
-        setVentas(
-          (ords?.content ?? [])
-            .map((o) => {
-              const mios = (o.detalles ?? []).filter(
-                (d) => idsProductos.has(d.idProducto) || idsPropios.has(d.idPublicacion)
-              );
-              return {
-                ...o,
-                mios,
-                subtotalMio: mios.reduce((acc, d) => acc + Number(d.subtotalItem ?? 0), 0),
-              };
-            })
-            .filter((o) => o.mios.length > 0)
-            // Número correlativo para mostrar (el id real solo se usa en las llamadas al back)
-            .map((o, i) => ({ ...o, numero: i + 1 }))
-        );
-      } catch (e) {
-        console.error(e);
-        setVentas([]);
-      }
+      const ids = [...new Set(pag.items.map((o) => o.idPublicacion))];
+      const pubs = await Promise.all(ids.map((id) => obtenerPublicacion(id).catch(() => null)));
+      const porId = Object.fromEntries(pubs.filter(Boolean).map((p) => [p.id, p]));
+      setOfertas({
+        ...pag,
+        items: pag.items.map((o) => {
+          const p = porId[o.idPublicacion];
+          return {
+            ...o,
+            tituloPublicacion: p?.titulo ?? "Publicación eliminada",
+            imagen: imagenDePublicacion(p),
+            valorLote: precioTotal(p),
+          };
+        }),
+      });
     } catch (err) {
       console.error(err);
-      setError(err.message || "No fue posible cargar tu panel.");
+      setError(err.message || "No fue posible cargar las ofertas recibidas.");
     } finally {
-      setCargando(false);
+      marcarCarga("ofertas", false);
+    }
+  }, [idVendedor, paginas.ofertas, estadoOferta]);
+
+  /* Publicaciones: paginación del servidor (el back ya excluye las ELIMINADAS) */
+  const cargarPublicaciones = useCallback(async () => {
+    if (!idVendedor) return;
+    try {
+      marcarCarga("publicaciones", true);
+      setPublicaciones(
+        paginaDe(
+          await obtenerPublicaciones({
+            idVendedor,
+            estadoPublicacion: null,
+            page: paginas.publicaciones,
+            size: POR_PAGINA,
+          })
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "No fue posible cargar tus publicaciones.");
+    } finally {
+      marcarCarga("publicaciones", false);
+    }
+  }, [idVendedor, paginas.publicaciones]);
+
+  /*
+   * Ventas: órdenes con ítems míos. Se identifican por producto o, de respaldo, por publicación
+   * (si el producto fue dado de baja). PENDIENTE: /ordenes no filtra por vendedor, por eso esta
+   * pestaña todavía trae hasta 100 registros y pagina en el navegador (corresponde al MS de compras).
+   */
+  const cargarVentas = useCallback(async () => {
+    if (!idVendedor) return;
+    try {
+      marcarCarga("ordenes", true);
+      const [ords, prods, pubs] = await Promise.all([
+        obtenerOrdenes({ page: 0, size: 100 }),
+        obtenerProductos({ idVendedor, size: 100 }).catch(() => null),
+        obtenerPublicaciones({ idVendedor, estadoPublicacion: null, size: 100 }).catch(() => null),
+      ]);
+      const idsProductos = new Set((prods?.content ?? []).map((p) => p.id));
+      const idsPropios = new Set((pubs?.content ?? []).map((p) => p.id));
+      setVentas(
+        (ords?.content ?? [])
+          .map((o) => {
+            const mios = (o.detalles ?? []).filter(
+              (d) => idsProductos.has(d.idProducto) || idsPropios.has(d.idPublicacion)
+            );
+            return {
+              ...o,
+              mios,
+              subtotalMio: mios.reduce((acc, d) => acc + Number(d.subtotalItem ?? 0), 0),
+            };
+          })
+          .filter((o) => o.mios.length > 0)
+          // Número correlativo para mostrar (el id real solo se usa en las llamadas al back)
+          .map((o, i) => ({ ...o, numero: i + 1 }))
+      );
+    } catch (e) {
+      console.error(e);
+      setVentas([]);
+    } finally {
+      marcarCarga("ordenes", false);
     }
   }, [idVendedor]);
 
@@ -296,26 +364,36 @@ export default function PanelVendedorPage() {
   const cargarProductos = useCallback(async () => {
     if (!idVendedor) return;
     try {
-      const data = await obtenerProductos({ idVendedor, page: pagina, size: POR_PAGINA });
-      setProductos({
-        items: data?.content ?? [],
-        total: data?.totalElements ?? 0,
-        totalPaginas: data?.totalPages ?? 0,
-      });
+      setProductos(paginaDe(await obtenerProductos({ idVendedor, page: paginas.productos, size: POR_PAGINA })));
     } catch (err) {
       setError(err.message || "No fue posible cargar tus productos.");
     }
-  }, [idVendedor, pagina, recargaProductos]);
+  }, [idVendedor, paginas.productos, recargaProductos]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { cargarNegocio(); }, [cargarNegocio]);
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => { cargarResumen(); }, [cargarResumen]);
+  useEffect(() => { cargarOfertas(); }, [cargarOfertas]);
+  useEffect(() => { cargarPublicaciones(); }, [cargarPublicaciones]);
+  useEffect(() => { cargarVentas(); }, [cargarVentas]);
+
+  // Si la página actual quedó vacía (p. ej. se eliminó su último registro), retrocede a la última
+  const paginado = { ofertas, publicaciones, productos }[tab];
+  useEffect(() => {
+    if (paginado && pagina > 0 && pagina >= paginado.totalPaginas) {
+      irAPagina(tab, Math.max(0, paginado.totalPaginas - 1));
+    }
+  }, [tab, pagina, paginado]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const recargar = () =>
+    Promise.all([cargarResumen(), cargarOfertas(), cargarPublicaciones(), cargarVentas(), cargarProductos()]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargarProductos(); }, [cargarProductos]);
 
   const cambiarTab = (id) => {
     setTab(id);
-    setPagina(0);
+    irAPagina(id, 0);
     setMensaje("");
   };
 
@@ -325,8 +403,8 @@ export default function PanelVendedorPage() {
       setError("");
       await accion();
       setMensaje(textoOk);
-      // Confirmar una orden descuenta stock: recargar también la pestaña Productos
-      await Promise.all([cargarNegocio(), cargarProductos()]);
+      // Confirmar una orden descuenta stock: se recargan todas las pestañas y el resumen
+      await recargar();
       return true;
     } catch (err) {
       setError(err.message);
@@ -343,7 +421,7 @@ export default function PanelVendedorPage() {
       confirmLabel: "Aceptar oferta",
       confirmVariant: "success",
       id: o.id,
-      mensaje: `Vas a aceptar la oferta de ${formatearDinero(o.montoOfertado)}${textoPorcentaje(o)} de ${nombreDe(o.idComprador, `Comprador #${o.idComprador}`)} por "${o.tituloPublicacion}".`,
+      mensaje: `Vas a aceptar la oferta de ${formatearDinero(o.montoOfertado)}${textoPorcentaje(o)} de ${nombreDe(o.idComprador, "Comprador")} por "${o.tituloPublicacion}".`,
       detalle: "Se reservan todas las unidades de la publicación para el comprador (tiene 48 h para pagar) y se rechazan las demás ofertas pendientes. No se puede deshacer.",
       run: () => aceptarOferta(o.id),
       ok: "Oferta aceptada.",
@@ -353,7 +431,7 @@ export default function PanelVendedorPage() {
       confirmLabel: "Rechazar oferta",
       confirmVariant: "danger",
       id: o.id,
-      mensaje: `Vas a rechazar la oferta de ${formatearDinero(o.montoOfertado)} de ${nombreDe(o.idComprador, `Comprador #${o.idComprador}`)} por "${o.tituloPublicacion}".`,
+      mensaje: `Vas a rechazar la oferta de ${formatearDinero(o.montoOfertado)} de ${nombreDe(o.idComprador, "Comprador")} por "${o.tituloPublicacion}".`,
       detalle: "Esta acción no se puede deshacer.",
       run: () => rechazarOferta(o.id),
       ok: "Oferta rechazada.",
@@ -423,10 +501,7 @@ export default function PanelVendedorPage() {
     if (ok) setDetalle(null); // el detalle abierto quedaría con el estado viejo
   };
 
-  const activas = publicaciones.filter((p) => p.estadoPublicacion === "ACTIVA").length;
-  const pausadas = publicaciones.filter((p) => p.estadoPublicacion === "PAUSADA").length;
-  const vendidas = publicaciones.filter((p) => p.estadoPublicacion === "VENDIDA").length;
-  const pendientes = ofertas.filter((o) => o.estadoOferta === "PENDIENTE").length;
+  const { activas, pausadas, vendidas, pendientes } = resumen;
   const ventasValidas = ventas.filter((v) => v.estadoOrden !== "CANCELADA");
   const ingresos = ventasValidas
     .filter((v) => v.estadoOrden !== "PENDIENTE")
@@ -441,13 +516,11 @@ export default function PanelVendedorPage() {
   }
 
   /* ───────── Tablas por pestaña ───────── */
-  const ofertasPagina = paginar(ofertas, pagina);
-  const pubsPagina = paginar(publicaciones, pagina);
   const ventasPagina = paginar(ventas, pagina);
 
   const tablas = {
     ofertas: {
-      total: ofertas.length,
+      total: ofertas.total,
       columnas: [
         { key: "comprador", label: "COMPRADOR" },
         { key: "articulo", label: "PUBLICACIÓN" },
@@ -456,12 +529,12 @@ export default function PanelVendedorPage() {
         { key: "fecha", label: "FECHA" },
         { key: "acciones", label: "ACCIONES RÁPIDAS", className: "text-right" },
       ],
-      datos: ofertasPagina,
-      vacio: "Todavía no recibiste ofertas.",
+      datos: ofertas.items,
+      vacio: estadoOferta === TODAS ? "Todavía no recibiste ofertas." : "No hay ofertas en ese estado.",
       fila: (o) => (
         <>
           <td className="px-4 py-4 font-semibold text-[#1F2937]">
-            {nombreDe(o.idComprador, `Comprador #${o.idComprador}`)}
+            {nombreDe(o.idComprador, "Comprador")}
           </td>
           <td className="px-4 py-4">
             <div className="flex items-center gap-3">
@@ -488,13 +561,13 @@ export default function PanelVendedorPage() {
               </Button>
               {o.estadoOferta === "PENDIENTE" && (
                 <>
-                <Button size="sm" variant="outlineDanger" disabled={procesando === o.id}
-                  onClick={() => setAccion({ tipo: "rechazarOferta", data: o })}>
-                  Rechazar
-                </Button>
                 <Button size="sm" variant="success" loading={procesando === o.id}
                   onClick={() => setAccion({ tipo: "aceptarOferta", data: o })}>
                   Aceptar
+                </Button>
+                <Button size="sm" variant="outlineDanger" disabled={procesando === o.id}
+                  onClick={() => setAccion({ tipo: "rechazarOferta", data: o })}>
+                  Rechazar
                 </Button>
                 </>
               )}
@@ -527,7 +600,7 @@ export default function PanelVendedorPage() {
               </p>
             ))}
           </td>
-          <td className="px-4 py-4 text-[#4B5563]">{nombreDe(v.idComprador, `Comprador #${v.idComprador}`)}</td>
+          <td className="px-4 py-4 text-[#4B5563]">{nombreDe(v.idComprador, "Comprador")}</td>
           <td className="px-4 py-4 text-[#6B7280]">{formatearFecha(v.fechaOrden)}</td>
           <td className="px-4 py-4 font-bold text-[#1F2937]">{formatearDinero(v.subtotalMio)}</td>
           <td className="px-4 py-4">
@@ -546,7 +619,7 @@ export default function PanelVendedorPage() {
     },
 
     publicaciones: {
-      total: publicaciones.length,
+      total: publicaciones.total,
       columnas: [
         { key: "titulo", label: "PUBLICACIÓN" },
         { key: "tipo", label: "TIPO DE VENTA" },
@@ -555,7 +628,7 @@ export default function PanelVendedorPage() {
         { key: "fecha", label: "PUBLICADA" },
         { key: "acciones", label: "ACCIONES", className: "text-right" },
       ],
-      datos: pubsPagina,
+      datos: publicaciones.items,
       vacio: "Todavía no tenés publicaciones.",
       fila: (p) => (
         <>
@@ -649,8 +722,7 @@ export default function PanelVendedorPage() {
   };
 
   const actual = tablas[tab];
-  const totalPaginas =
-    tab === "productos" ? productos.totalPaginas : Math.ceil(actual.total / POR_PAGINA);
+  const totalPaginas = paginado ? paginado.totalPaginas : Math.ceil(actual.total / POR_PAGINA);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -699,9 +771,16 @@ export default function PanelVendedorPage() {
         ))}
       </div>
 
+      {tab === "ofertas" && (
+        <div className="mb-4 max-w-xs">
+          <Select name="estadoOferta" value={estadoOferta} options={FILTRO_ESTADO_OFERTA}
+            onChange={(e) => { setEstadoOferta(e.target.value); irAPagina("ofertas", 0); }} />
+        </div>
+      )}
+
       {/* TABLA */}
       <Card padding="none" className="overflow-hidden">
-        {cargando && tab !== "productos" ? (
+        {cargando[tab] ? (
           <p className="py-16 text-center text-sm text-[#6B7280]">Cargando...</p>
         ) : (
           <Table columns={actual.columnas} data={actual.datos}
@@ -711,7 +790,7 @@ export default function PanelVendedorPage() {
 
       <div className="mt-6">
         <Pagination currentPage={pagina + 1} totalPages={totalPaginas}
-          onPageChange={(p) => setPagina(p - 1)} />
+          onPageChange={(p) => irAPagina(tab, p - 1)} />
       </div>
 
       <ConfirmActionModal
@@ -737,7 +816,7 @@ export default function PanelVendedorPage() {
               const eraEdicion = Boolean(productoForm.id);
               setProductoForm(null);
               setTab("productos");
-              if (!eraEdicion) setPagina(0); // en edición se queda en la página actual
+              if (!eraEdicion) irAPagina("productos", 0); // en edición se queda en la página actual
               setRecargaProductos((n) => n + 1);
               setMensaje(texto);
             }}
@@ -753,7 +832,7 @@ export default function PanelVendedorPage() {
                 <h2 className="mb-5 text-lg font-bold text-[#1F2937]">Detalle de la oferta</h2>
                 <dl className="mb-5 grid gap-4 sm:grid-cols-2">
                   <Dato label="Comprador">
-                    {nombreDe(detalle.data.idComprador, `Comprador #${detalle.data.idComprador}`)}
+                    {nombreDe(detalle.data.idComprador, "Comprador")}
                   </Dato>
                   <Dato label="Monto ofertado">
                     <span className="font-bold">{formatearDinero(detalle.data.montoOfertado)}</span>
@@ -777,7 +856,7 @@ export default function PanelVendedorPage() {
                 </div>
                 <dl className="mb-5 grid gap-4 sm:grid-cols-2">
                   <Dato label="Comprador">
-                    {nombreDe(detalle.data.idComprador, `Comprador #${detalle.data.idComprador}`)}
+                    {nombreDe(detalle.data.idComprador, "Comprador")}
                   </Dato>
                   <Dato label="Estado">
                     <Badge variant={variantesOrden[detalle.data.estadoOrden] ?? "neutral"}>

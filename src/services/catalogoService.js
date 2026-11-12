@@ -80,8 +80,35 @@ export const eliminarProducto = (id) =>
 
 // Ofertas
 
-export const obtenerOfertas = ({ page = 0, size = 50, idPublicacion, idComprador, estadoOferta } = {}) =>
-  request(`${RUTA_OFERTAS}?${qs({ page, size, idPublicacion, idComprador, estadoOferta })}`);
+// Paginado en el servidor. Quien no es ADMIN solo recibe ofertas donde es comprador o vendedor.
+// idVendedor = ofertas recibidas en sus publicaciones. Fechas en formato yyyy-MM-dd.
+export const obtenerOfertas = ({
+  page = 0,
+  size = 10,
+  idPublicacion,
+  idComprador,
+  idVendedor,
+  estadoOferta,
+  montoMin,
+  montoMax,
+  fechaDesde,
+  fechaHasta,
+} = {}) =>
+  request(
+    `${RUTA_OFERTAS}?${qs({
+      page,
+      size,
+      sort: "fechaOferta,desc",
+      idPublicacion,
+      idComprador,
+      idVendedor,
+      estadoOferta,
+      montoMin,
+      montoMax,
+      fechaDesde,
+      fechaHasta,
+    })}`
+  );
 
 export const obtenerOferta = (id) => request(`${RUTA_OFERTAS}/${id}`);
 
@@ -121,5 +148,5 @@ export const reasignarReserva = (origen, idOrigen, nuevoOrigen, nuevoIdOrigen) =
     body: { origen: nuevoOrigen, idOrigen: nuevoIdOrigen },
   });
 
-// POST /api/reservas/liberar-vencidas  -> { liberadas }
+// POST /api/reservas/liberar-vencidas (solo ADMIN) -> ReservaDTO[] liberadas
 export const liberarReservasVencidas = () => request(`${RUTA_RESERVAS}/liberar-vencidas`, { method: "POST" });

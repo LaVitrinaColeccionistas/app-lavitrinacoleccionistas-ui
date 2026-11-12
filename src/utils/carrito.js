@@ -46,6 +46,7 @@ export function entradasDePublicacion(publicacion) {
   return (publicacion?.detalles ?? [])
     .map((d) => ({
       idPublicacion: publicacion.id,
+      idVendedor: publicacion.idVendedor,
       idProducto: d.producto?.id ?? d.idProducto,
       cantidad: 1,
       disponible: d.cantidadDisponible ?? d.cantidadPublicada ?? null,
@@ -53,9 +54,22 @@ export function entradasDePublicacion(publicacion) {
     .filter((e) => e.idProducto != null);
 }
 
+// Resultado de agregarAlCarrito cuando el carrito ya tiene productos de otro vendedor
+export const OTRO_VENDEDOR = -1;
+export const AVISO_OTRO_VENDEDOR =
+  "Tu carrito ya tiene productos de otro vendedor. Cada compra es con un solo vendedor: finalizá o vaciá el carrito para comprarle a otro.";
+
+// Vendedor al que pertenece el carrito (null si está vacío o no se conoce)
+export const vendedorDe = (items) => items.find((i) => i.idVendedor != null)?.idVendedor ?? null;
+
+// Devuelve la cantidad de entradas agregadas, u OTRO_VENDEDOR si no se permite mezclar vendedores
 export function agregarAlCarrito(usuarioId, entradas) {
   const items = leerCarrito(usuarioId);
   let agregados = 0;
+
+  const actual = vendedorDe(items);
+  const nuevo = vendedorDe(entradas);
+  if (actual != null && nuevo != null && actual !== nuevo) return OTRO_VENDEDOR;
 
   entradas.forEach((entrada) => {
     const tope = entrada.disponible ?? Infinity;
@@ -73,6 +87,7 @@ export function agregarAlCarrito(usuarioId, entradas) {
     if (tope < 1) return;
     items.push({
       idPublicacion: entrada.idPublicacion,
+      idVendedor: entrada.idVendedor,
       idProducto: entrada.idProducto,
       cantidad: Math.min(entrada.cantidad, tope),
     });
