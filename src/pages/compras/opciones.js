@@ -53,6 +53,11 @@ export const TRANSICIONES_ORDEN = {
   CANCELADA: [],
 };
 
+export const ACCION_VENDEDOR = {
+  PAGADA: "Confirmar pago recibido",
+  ENVIADA: "Marcar como enviado",
+};
+
 export const etiqueta = (lista, valor) =>
   lista.find((o) => o.value === valor)?.label ?? valor ?? "-";
 

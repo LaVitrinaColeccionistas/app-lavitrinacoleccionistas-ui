@@ -8,10 +8,18 @@ import Breadcrumb from "../../components/layout/Breadcrumb";
 import Button from "../../components/common/Button";
 import { useAuth } from "../../context/AuthContext";
 import { obtenerPublicacion } from "../../services/catalogoService";
-import { AVISO_OTRO_VENDEDOR, OTRO_VENDEDOR, agregarAlCarrito, entradasDePublicacion } from "../../utils/carrito";
+import {
+  AVISO_OTRO_VENDEDOR,
+  AVISO_SIN_STOCK,
+  OTRO_VENDEDOR,
+  SIN_STOCK,
+  agregarAlCarrito,
+  entradasDePublicacion,
+} from "../../utils/carrito";
 import { formatearDinero } from "../vendedor/opciones";
 import { esOfertable, precioPrincipal, precioTotal } from "../../utils/precios";
 import useNombres from "../../hooks/useNombres";
+import ValoracionesPublicacion from "./ValoracionesPublicacion";
 
 const COLOR_RAREZA = {
   "Ultra Raro": "danger",
@@ -114,6 +122,10 @@ export default function DetallePublicacionPage() {
         setAvisoCarrito({ variant: "warning", texto: AVISO_OTRO_VENDEDOR });
         return;
       }
+      if (agregados === SIN_STOCK) {
+        setAvisoCarrito({ variant: "warning", texto: AVISO_SIN_STOCK });
+        return;
+      }
       setAvisoCarrito(
         agregados > 0
           ? { variant: "success", texto: "Se agregó a tu carrito." }
@@ -123,8 +135,13 @@ export default function DetallePublicacionPage() {
 
   const comprarAhora = () =>
     requerirSesion(() => {
-      if (agregarAlCarrito(usuarioId, entradasDePublicacion(pub)) === OTRO_VENDEDOR) {
+      const agregados = agregarAlCarrito(usuarioId, entradasDePublicacion(pub));
+      if (agregados === OTRO_VENDEDOR) {
         setAvisoCarrito({ variant: "warning", texto: AVISO_OTRO_VENDEDOR });
+        return;
+      }
+      if (agregados === SIN_STOCK) {
+        setAvisoCarrito({ variant: "warning", texto: AVISO_SIN_STOCK });
         return;
       }
       navigate("/carrito");
@@ -370,6 +387,8 @@ export default function DetallePublicacionPage() {
           </div>
         </div>
       </div>
+
+      <ValoracionesPublicacion idPublicacion={pub.id} />
     </div>
   );
 }

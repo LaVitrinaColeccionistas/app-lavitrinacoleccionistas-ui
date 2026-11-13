@@ -42,7 +42,6 @@ const ESTADOS = {
 const filtrosVacios = { precioMin: "", precioMax: "", fechaMin: "", fechaMax: "" };
 
 const soloDigitos = (v) => v.replace(/\D/g, "");
-const dia = (f) => (f ? String(f).slice(0, 10) : "");
 
 function Miniatura({ src }) {
   return src ? (
@@ -250,6 +249,7 @@ export default function OfertasPage() {
 
       const orden = await crearOrden({
         idComprador: usuarioId,
+        idOferta: aPagar.id,
         metodoPago,
         detalles: reservas.map((r) => ({
           idProducto: r.idProducto,

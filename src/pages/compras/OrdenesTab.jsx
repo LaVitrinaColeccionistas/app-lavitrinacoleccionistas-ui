@@ -17,6 +17,7 @@ import { ORIGEN_RESERVA, liberarReserva } from "../../services/catalogoService";
 import {
   actualizarEstadoOrden,
   cancelarOrden,
+  confirmarRecepcionOrden,
   obtenerOrdenes,
   paginaDe,
 } from "../../services/comprasService";
@@ -37,8 +38,10 @@ import {
 
 const POR_PAGINA = 10;
 
-export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, onReclamoCreado }) {
+export default function OrdenesTab({ usuarioId, esAdmin, modo = "compras", onMensaje, onReclamoCreado }) {
   const navigate = useNavigate();
+  const esVentas = modo === "ventas";
+  const verComprador = modo !== "compras";
 
   const [ordenes, setOrdenes] = useState([]);
   const [nombres, setNombres] = useState({});
@@ -54,6 +57,7 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
   const [seleccionada, setSeleccionada] = useState(null);
   const [reclamando, setReclamando] = useState(null);
   const [aCancelar, setACancelar] = useState(null);
+  const [pendientes, setPendientes] = useState({ porCobrar: 0, porEnviar: 0 });
   const [procesando, setProcesando] = useState(false);
 
   useEffect(() => {
@@ -67,7 +71,8 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
         const data = await obtenerOrdenes({
           page: pagina,
           size: POR_PAGINA,
-          idComprador: esGestor ? undefined : usuarioId,
+          idComprador: modo === "compras" ? usuarioId : undefined,
+          idVendedor: esVentas ? usuarioId : undefined,
           estadoOrden: estado,
           producto: busquedaAplicada.trim(),
         });
@@ -78,7 +83,7 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
         setTotalPaginas(paginas);
 
         const ids = [...new Set(items.map((o) => o.idComprador))].filter((x) => x != null);
-        if (esGestor && ids.length) {
+        if (verComprador && ids.length) {
           try {
             const perfiles = await obtenerNombresUsuarios(ids);
             if (!cancelado) {
@@ -103,7 +108,47 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
     return () => {
       cancelado = true;
     };
-  }, [pagina, estado, busquedaAplicada, usuarioId, esGestor, recarga, navigate]);
+  }, [pagina, estado, busquedaAplicada, usuarioId, modo, esVentas, verComprador, recarga, navigate]);
+
+  useEffect(() => {
+    if (!esVentas) return;
+    let cancelado = false;
+
+    Promise.all([
+      obtenerOrdenes({ page: 0, size: 1, idVendedor: usuarioId, estadoOrden: "PENDIENTE" }),
+      obtenerOrdenes({ page: 0, size: 1, idVendedor: usuarioId, estadoOrden: "PAGADA" }),
+    ])
+      .then(([porCobrar, porEnviar]) => {
+        if (!cancelado) {
+          setPendientes({ porCobrar: paginaDe(porCobrar).total, porEnviar: paginaDe(porEnviar).total });
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelado = true;
+    };
+  }, [esVentas, usuarioId, recarga]);
+
+  const confirmarRecepcion = async (orden) => {
+    try {
+      setProcesando(true);
+      setError("");
+      const actualizada = await confirmarRecepcionOrden(orden.id, usuarioId);
+      setSeleccionada(actualizada);
+      setRecarga((n) => n + 1);
+    } catch (err) {
+      if (!resolverError(err, navigate)) setError(err.message);
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const estadosSiguientesDe = (orden) => {
+    if (modo === "compras") return [];
+    const siguientes = TRANSICIONES_ORDEN[orden.estadoOrden].filter((e) => e !== "CANCELADA");
+    return esVentas ? siguientes.filter((e) => e !== "ENTREGADA") : siguientes;
+  };
 
   const ejecutar = async (accion, textoOk) => {
     try {
@@ -126,7 +171,7 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
 
   const columnas = [
     { key: "productos", label: "PRODUCTOS" },
-    ...(esGestor ? [{ key: "comprador", label: "COMPRADOR" }] : []),
+    ...(verComprador ? [{ key: "comprador", label: "COMPRADOR" }] : []),
     { key: "fecha", label: "FECHA" },
     { key: "pago", label: "PAGO" },
     { key: "total", label: "TOTAL" },
@@ -160,6 +205,15 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
         </div>
       </div>
 
+      {esVentas && (pendientes.porCobrar > 0 || pendientes.porEnviar > 0) && (
+        <Alert variant="info" className="mb-4">
+          {pendientes.porCobrar > 0 &&
+            `Tenés ${pendientes.porCobrar} ${pendientes.porCobrar === 1 ? "pedido esperando" : "pedidos esperando"} el pago del comprador. `}
+          {pendientes.porEnviar > 0 &&
+            `Tenés ${pendientes.porEnviar} ${pendientes.porEnviar === 1 ? "venta pagada" : "ventas pagadas"} para enviar.`}
+        </Alert>
+      )}
+
       {error && (
         <Alert variant="danger" className="mb-4" onClose={() => setError("")}>
           {error}
@@ -174,7 +228,11 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
             columns={columnas}
             data={ordenes}
             emptyMessage={
-              busquedaAplicada || estado ? "No hay compras que coincidan con la búsqueda." : "Todavía no hay compras."
+              busquedaAplicada || estado
+                ? "No hay resultados para la búsqueda."
+                : esVentas
+                  ? "Todavía no recibiste pedidos."
+                  : "Todavía no hay compras."
             }
             renderRow={(o) => (
               <>
@@ -184,7 +242,7 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
                     {o.detalles?.length ?? 0} {(o.detalles?.length ?? 0) === 1 ? "producto" : "productos"}
                   </p>
                 </td>
-                {esGestor && <td className="px-4 py-4 text-[#4B5563]">{nombres[o.idComprador] ?? "-"}</td>}
+                {verComprador && <td className="px-4 py-4 text-[#4B5563]">{nombres[o.idComprador] ?? "-"}</td>}
                 <td className="px-4 py-4 text-[#6B7280]">{formatearFecha(o.fechaOrden)}</td>
                 <td className="px-4 py-4 text-[#4B5563]">{etiqueta(METODOS_PAGO, o.metodoPago)}</td>
                 <td className="px-4 py-4 font-bold text-[#1F2937]">{formatearDinero(o.montoTotal)}</td>
@@ -214,13 +272,20 @@ export default function OrdenesTab({ usuarioId, esAdmin, esGestor, onMensaje, on
         <FormOverlay onClose={() => setSeleccionada(null)} maxWidth="max-w-3xl">
           <OrdenDetalle
             orden={seleccionada}
-            nombreComprador={esGestor ? nombres[seleccionada.idComprador] : ""}
-            estadosSiguientes={
-              esGestor ? TRANSICIONES_ORDEN[seleccionada.estadoOrden].filter((e) => e !== "CANCELADA") : []
-            }
-            puedeEditar={seleccionada.estadoOrden === "PENDIENTE" && (esAdmin || esDueno(seleccionada))}
+            nombreComprador={verComprador ? nombres[seleccionada.idComprador] : ""}
+            estadosSiguientes={estadosSiguientesDe(seleccionada)}
+            modoVenta={esVentas}
+            usuarioId={usuarioId}
+            puedeEditar={!esVentas && seleccionada.estadoOrden === "PENDIENTE" && (esAdmin || esDueno(seleccionada))}
             puedeCancelar={esAdmin && TRANSICIONES_ORDEN[seleccionada.estadoOrden].includes("CANCELADA")}
-            puedeReclamar={seleccionada.estadoOrden !== "CANCELADA" && (esAdmin || esDueno(seleccionada))}
+            puedeReclamar={
+              !esVentas && seleccionada.estadoOrden !== "CANCELADA" && (esAdmin || esDueno(seleccionada))
+            }
+            puedeConfirmarRecepcion={
+              modo === "compras" && seleccionada.estadoOrden === "ENVIADA" && esDueno(seleccionada)
+            }
+            puedeValorar={!esVentas && seleccionada.estadoOrden === "ENTREGADA" && esDueno(seleccionada)}
+            onConfirmarRecepcion={() => confirmarRecepcion(seleccionada)}
             procesando={procesando}
             onEditar={() => navigate(`/compras/${seleccionada.id}/editar`)}
             onCambiarEstado={(nuevo) =>

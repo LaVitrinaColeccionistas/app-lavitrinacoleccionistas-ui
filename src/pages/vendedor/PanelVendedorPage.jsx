@@ -322,15 +322,15 @@ export default function PanelVendedorPage() {
 
   /*
    * Ventas: órdenes con ítems míos. Se identifican por producto o, de respaldo, por publicación
-   * (si el producto fue dado de baja). PENDIENTE: /ordenes no filtra por vendedor, por eso esta
-   * pestaña todavía trae hasta 100 registros y pagina en el navegador (corresponde al MS de compras).
+   * (si el producto fue dado de baja). El MS de compras ya devuelve solo las órdenes del vendedor;
+   * se pagina en el navegador.
    */
   const cargarVentas = useCallback(async () => {
     if (!idVendedor) return;
     try {
       marcarCarga("ordenes", true);
       const [ords, prods, pubs] = await Promise.all([
-        obtenerOrdenes({ page: 0, size: 100 }),
+        obtenerOrdenes({ page: 0, size: 100, idVendedor }),
         obtenerProductos({ idVendedor, size: 100 }).catch(() => null),
         obtenerPublicaciones({ idVendedor, estadoPublicacion: null, size: 100 }).catch(() => null),
       ]);
@@ -368,7 +368,7 @@ export default function PanelVendedorPage() {
     } catch (err) {
       setError(err.message || "No fue posible cargar tus productos.");
     }
-  }, [idVendedor, paginas.productos, recargaProductos]);
+  }, [idVendedor, paginas.productos, recargaProductos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => { cargarResumen(); }, [cargarResumen]);

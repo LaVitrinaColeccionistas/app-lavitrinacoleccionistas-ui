@@ -1,8 +1,11 @@
+import Alert from "../../components/common/Alert";
 import Badge from "../../components/common/Badge";
 import Button from "../../components/common/Button";
 import Card from "../../components/common/Card";
 import Table from "../../components/common/Table";
+import ValoracionesOrden from "./ValoracionesOrden";
 import {
+  ACCION_VENDEDOR,
   ESTADOS_ORDEN,
   METODOS_PAGO,
   etiqueta,
@@ -18,6 +21,17 @@ const columnas = [
   { key: "subtotal", label: "SUBTOTAL", className: "text-right" },
 ];
 
+function avisoDeEstado(estado, modoVenta, esComprador) {
+  if (modoVenta) {
+    if (estado === "PENDIENTE") return "Recibiste un pedido. Cuando el comprador te pague, confirmá el pago recibido.";
+    if (estado === "PAGADA") return "El pago ya está confirmado. Enviá el producto y marcalo como enviado.";
+    if (estado === "ENVIADA") return "Esperando que el comprador confirme que recibió el producto.";
+    return "";
+  }
+  if (esComprador && estado === "ENVIADA") return "El vendedor envió tu compra. Cuando te llegue, confirmalo para poder dejar tu reseña.";
+  return "";
+}
+
 export default function OrdenDetalle({
   orden,
   nombreComprador,
@@ -25,18 +39,31 @@ export default function OrdenDetalle({
   puedeEditar = false,
   puedeCancelar = false,
   puedeReclamar = false,
+  puedeConfirmarRecepcion = false,
+  puedeValorar = false,
+  modoVenta = false,
+  usuarioId,
   procesando = false,
   onEditar,
   onCambiarEstado,
   onCancelar,
   onReclamar,
+  onConfirmarRecepcion,
 }) {
+  const aviso = avisoDeEstado(orden.estadoOrden, modoVenta, puedeConfirmarRecepcion);
+
   return (
     <Card padding="lg">
       <div className="mb-5 pr-8">
         <h2 className="text-lg font-bold text-[#1F2937]">Detalle de la compra</h2>
         <p className="mt-1 text-sm text-[#6B7280]">Realizada el {formatearFecha(orden.fechaOrden)}</p>
       </div>
+
+      {aviso && (
+        <Alert variant="info" className="mb-5">
+          {aviso}
+        </Alert>
+      )}
 
       <dl className="mb-5 grid gap-4 text-sm sm:grid-cols-3">
         {nombreComprador && (
@@ -98,9 +125,16 @@ export default function OrdenDetalle({
         )}
         {estadosSiguientes.map((estado) => (
           <Button key={estado} variant="outline" loading={procesando} onClick={() => onCambiarEstado(estado)}>
-            Marcar como {etiqueta(ESTADOS_ORDEN, estado).toLowerCase()}
+            {modoVenta && ACCION_VENDEDOR[estado]
+              ? ACCION_VENDEDOR[estado]
+              : `Marcar como ${etiqueta(ESTADOS_ORDEN, estado).toLowerCase()}`}
           </Button>
         ))}
+        {puedeConfirmarRecepcion && (
+          <Button loading={procesando} onClick={onConfirmarRecepcion}>
+            Ya recibí el producto
+          </Button>
+        )}
         {puedeReclamar && (
           <Button variant="outline" disabled={procesando} onClick={onReclamar}>
             Iniciar reclamo
@@ -112,6 +146,8 @@ export default function OrdenDetalle({
           </Button>
         )}
       </div>
+
+      {puedeValorar && <ValoracionesOrden orden={orden} usuarioId={usuarioId} />}
     </Card>
   );
 }

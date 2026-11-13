@@ -7,6 +7,10 @@
 - **React Router DOM** — ruteo entre páginas
 - **Backend:** Java Spring Boot (API REST, consumo vía `fetch`)
 
+## Configuración
+
+Copiar `.env.example` a `.env`. La variable `VITE_API_URL` apunta al API Gateway (`http://localhost:8080`), único punto de entrada al backend.
+
 ## Dependencias instaladas
 
 ```bash

@@ -59,6 +59,10 @@ export const OTRO_VENDEDOR = -1;
 export const AVISO_OTRO_VENDEDOR =
   "Tu carrito ya tiene productos de otro vendedor. Cada compra es con un solo vendedor: finalizá o vaciá el carrito para comprarle a otro.";
 
+export const SIN_STOCK = -2;
+export const AVISO_SIN_STOCK =
+  "Esta publicación no tiene unidades disponibles en este momento (pueden estar reservadas por otra compra).";
+
 // Vendedor al que pertenece el carrito (null si está vacío o no se conoce)
 export const vendedorDe = (items) => items.find((i) => i.idVendedor != null)?.idVendedor ?? null;
 
@@ -66,6 +70,7 @@ export const vendedorDe = (items) => items.find((i) => i.idVendedor != null)?.id
 export function agregarAlCarrito(usuarioId, entradas) {
   const items = leerCarrito(usuarioId);
   let agregados = 0;
+  let sinStock = 0;
 
   const actual = vendedorDe(items);
   const nuevo = vendedorDe(entradas);
@@ -84,7 +89,10 @@ export function agregarAlCarrito(usuarioId, entradas) {
       return;
     }
 
-    if (tope < 1) return;
+    if (tope < 1) {
+      sinStock += 1;
+      return;
+    }
     items.push({
       idPublicacion: entrada.idPublicacion,
       idVendedor: entrada.idVendedor,
@@ -95,5 +103,6 @@ export function agregarAlCarrito(usuarioId, entradas) {
   });
 
   if (agregados > 0) guardarCarrito(usuarioId, items);
+  if (agregados === 0 && sinStock > 0) return SIN_STOCK;
   return agregados;
 }

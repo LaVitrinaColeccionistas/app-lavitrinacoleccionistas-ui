@@ -18,12 +18,7 @@ export default function ProtectedRoute({ children, roles }) {
   }
 
   if (roles?.length && !roles.some((rol) => tieneRol(rol))) {
-    return (
-      <Navigate
-        to={tieneRol("VENDEDOR") ? "/vendedor" : "/catalogo"}
-        replace
-      />
-    );
+    return <Navigate to="/403" replace />;
   }
 
   return children;

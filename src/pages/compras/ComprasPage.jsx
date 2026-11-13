@@ -8,21 +8,27 @@ import { useAuth } from "../../context/AuthContext";
 import OrdenesTab from "./OrdenesTab";
 import ReclamosTab from "./ReclamosTab";
 
-const TABS = [
-  { id: "ordenes", label: "Compras" },
-  { id: "reclamos", label: "Reclamos" },
-];
-
 export default function ComprasPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
   const { usuarioId, tieneRol } = useAuth();
 
   const esAdmin = tieneRol("ADMIN");
-  const esGestor = esAdmin || tieneRol("VENDEDOR");
+  const esVendedor = tieneRol("VENDEDOR");
+  const esGestor = esAdmin || esVendedor;
   const puedeComprar = esAdmin || tieneRol("COMPRADOR");
 
-  const [tab, setTab] = useState(state?.tab ?? "ordenes");
+  const tabs = [
+    ...(esAdmin
+      ? [{ id: "ordenes", label: "Compras", modo: "todas" }]
+      : [
+          ...(puedeComprar ? [{ id: "ordenes", label: "Mis compras", modo: "compras" }] : []),
+          ...(esVendedor ? [{ id: "ventas", label: "Mis ventas", modo: "ventas" }] : []),
+        ]),
+    { id: "reclamos", label: "Reclamos" },
+  ];
+
+  const [tab, setTab] = useState(tabs.some((t) => t.id === state?.tab) ? state.tab : tabs[0].id);
   const [mensaje, setMensaje] = useState(state?.mensaje ?? "");
 
   const cambiarTab = (id) => {
@@ -47,7 +53,7 @@ export default function ComprasPage() {
       )}
 
       <div className="mb-4 flex gap-6 border-b border-[#E5E7EB]">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -63,11 +69,12 @@ export default function ComprasPage() {
         ))}
       </div>
 
-      {tab === "ordenes" ? (
+      {tab !== "reclamos" ? (
         <OrdenesTab
+          key={tab}
           usuarioId={usuarioId}
           esAdmin={esAdmin}
-          esGestor={esGestor}
+          modo={tabs.find((t) => t.id === tab).modo}
           onMensaje={setMensaje}
           onReclamoCreado={() => {
             setTab("reclamos");

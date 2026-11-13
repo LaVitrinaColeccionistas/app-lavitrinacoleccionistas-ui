@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 import LoginPage from "./pages/auth/LoginPage";
@@ -14,6 +15,7 @@ import NuevoProductoPage from "./pages/vendedor/NuevoProductoPage";
 import CarritoPage from "./pages/compras/CarritoPage";
 import ComprasPage from "./pages/compras/ComprasPage";
 import SolicitudesRegistroPage from "./pages/admin/SolicitudesRegistroPage";
+import ForbiddenPage from "./pages/errores/ForbiddenPage";
 import NotFoundPage from "./pages/errores/NotFoundPage";
 import ServerErrorPage from "./pages/errores/ServerErrorPage";
 
@@ -21,6 +23,7 @@ import PageLayout from "./components/layout/PageLayout";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import FormOverlay from "./components/common/FormOverlay";
 import { useAuth } from "./context/AuthContext";
+import { EVENTO_ERROR_SERVIDOR } from "./services/api";
 
 const withLayout = (page) => (
   <PageLayout>{page}</PageLayout>
@@ -50,6 +53,15 @@ function FormularioVendedor({ children }) {
 
 export default function App() {
   const { usuarioId, autenticado, tieneRol } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const irAError = () => {
+      if (window.location.pathname !== "/error") navigate("/error", { replace: true });
+    };
+    window.addEventListener(EVENTO_ERROR_SERVIDOR, irAError);
+    return () => window.removeEventListener(EVENTO_ERROR_SERVIDOR, irAError);
+  }, [navigate]);
 
   const inicio = tieneRol("VENDEDOR") ? "/vendedor" : "/catalogo";
 
@@ -174,6 +186,8 @@ export default function App() {
       />
 
       <Route path="/error" element={<ServerErrorPage />} />
+
+      <Route path="/403" element={<ForbiddenPage />} />
 
       <Route path="/404" element={<NotFoundPage />} />
 
