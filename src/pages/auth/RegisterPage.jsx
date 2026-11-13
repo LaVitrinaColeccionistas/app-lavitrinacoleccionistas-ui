@@ -24,6 +24,8 @@ export default function RegisterPage() {
   const [apiError, setApiError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const esVendedor = form.tipo === "VENDEDOR";
+
   const handleChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
@@ -37,7 +39,7 @@ export default function RegisterPage() {
     try {
       const { tipo, ...datos } = form;
       await register({ ...datos, idRoles: [ROLES[tipo]] });
-      navigate("/login", { state: { registrado: true } });
+      navigate("/login", { state: { registrado: true, tipo } });
     } catch (err) {
       setApiError(err.message); // 409 = email ya registrado, 400 = validación
     } finally {
@@ -50,7 +52,9 @@ export default function RegisterPage() {
       <Card padding="lg" className="w-full max-w-[500px]">
         <h1 className="text-xl font-bold text-[#1F2937]">Crear Cuenta</h1>
         <p className="mb-5 mt-1 text-sm text-[#6B7280]">
-          Completá tus datos para solicitar el registro en la plataforma
+          {esVendedor
+            ? "Completá tus datos para solicitar el registro en la plataforma"
+            : "Completá tus datos para crear tu cuenta"}
         </p>
 
         {apiError && (
@@ -80,13 +84,15 @@ export default function RegisterPage() {
           <RadioGroup label="Tipo de usuario" name="tipo" value={form.tipo}
             onChange={handleChange} options={TIPOS} />
 
-          <Alert variant="info" title="Importante:">
-            Tu cuenta quedará pendiente de aprobación por un administrador.
-            Te notificaremos por correo cuando sea revisada.
-          </Alert>
+          {esVendedor && (
+            <Alert variant="info" title="Importante:">
+              Tu cuenta quedará pendiente de aprobación por un administrador.
+              Te notificaremos por correo cuando sea revisada.
+            </Alert>
+          )}
 
           <Button type="submit" variant="success" fullWidth loading={loading}>
-            Enviar Solicitud
+            {esVendedor ? "Enviar Solicitud" : "Crear Cuenta"}
           </Button>
         </form>
 

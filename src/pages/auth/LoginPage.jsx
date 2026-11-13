@@ -47,7 +47,7 @@ export default function LoginPage() {
 
       iniciarSesion(accessToken);
 
-      // Vuelve a donde estaba (si venía redirigido) o va al inicio según el rol
+      // Vuelve a donde estaba o va al inicio según el rol
       navigate(
         state?.from ||
           (getUserRole() === "VENDEDOR" ? "/vendedor" : "/catalogo"),
@@ -77,7 +77,9 @@ export default function LoginPage() {
 
         {state?.registrado && (
           <Alert variant="success" className="mb-4">
-            Solicitud enviada. Te notificaremos por correo cuando sea revisada.
+            {state.tipo === "VENDEDOR"
+              ? "Solicitud enviada. Te notificaremos por correo cuando sea revisada."
+              : "Cuenta creada. Ya podés iniciar sesión."}
           </Alert>
         )}
 

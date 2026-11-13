@@ -199,16 +199,16 @@ export default function SolicitudesRegistroPage() {
                       {formatearFecha(u.fechaCreacion)}
                     </td>
                     <td className={`px-4 py-4 text-right ${seleccionada?.id === u.id ? "bg-[#F3F4F8]" : ""}`}>
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => {
                           setSeleccionadaId(u.id);
                           setMotivo("");
                         }}
-                        className="text-sm font-semibold text-[#1F2937] underline hover:text-[#5146E5]"
                       >
                         Ver solicitud
-                      </button>
+                      </Button>
                     </td>
                   </>
                 )}
